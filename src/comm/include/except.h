@@ -1,7 +1,9 @@
 #ifndef _JSONV_EXCEPT_INCLUDED
 #define _JSONV_EXCEPT_INCLUDED
 #include <setjmp.h>
-#define T Except_T
+
+#define T Except
+
 typedef struct T {
 	const char *reason;
 } T;
@@ -16,7 +18,7 @@ struct Except_Frame {
 enum { Except_entered=0, Except_raised,
        Except_handled,   Except_finalized };
 extern Except_Frame *Except_stack;
-extern const Except_T Assert_Failed;
+extern const Except Assert_Failed;
 void Except_raise(const T *e, const char *file,int line);
 #ifdef WIN32
 #include <windows.h>

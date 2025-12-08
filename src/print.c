@@ -47,7 +47,7 @@ static void print_hint_internal(const char *json, jsonv_Hint hint,
 }
 
 void jsonv_print_schema_internal(const Jsonv_SchemaNode *schema, int depth,
-                        const char *json) {
+                                 const char *json) {
   /*#region*/
   if (!schema) {
     print_indent(depth);
@@ -59,10 +59,16 @@ void jsonv_print_schema_internal(const Jsonv_SchemaNode *schema, int depth,
   print_indent(depth);
   printf("Type: %s", schema_type_to_string(schema->type));
 
-  // Print string/array constraints if applicable
-  if (schema->type == jsonv_STRING || schema->type == jsonv_ARRAY) {
-    if (schema->minLength >= 0 || schema->maxLength >= 0) {
-      printf(" [Length: min=%d, max=%d]", schema->minLength, schema->maxLength);
+  // print contraintes
+  List list = schema->value_contraints;
+  if (list_length(list) > 0) {
+    for (; list; list = list->rest) {
+      Jsonv_Contraint *c = list->first;
+      char buff[100] = {0};
+      HINT(json, c->name, buff);
+      puts("");
+      print_indent(depth);
+      printf("[%s]", buff);
     }
   }
   printf("\n");
@@ -94,7 +100,8 @@ void jsonv_print_schema_internal(const Jsonv_SchemaNode *schema, int depth,
   /*#endregion*/
 }
 
-void jsonv_print_data_internal(const Jsonv_DataNode *node, int depth, const char *json) {
+void jsonv_print_data_internal(const Jsonv_DataNode *node, int depth,
+                               const char *json) {
   /*#region*/
   if (!node)
     return;

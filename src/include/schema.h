@@ -1,16 +1,20 @@
 #ifndef _JSONV_SCHEMA_H_INCLUDED
 #define _JSONV_SCHEMA_H_INCLUDED
 #include "hint.h"
+#include "list.h"
 #include "type.h"
 #include <jsmn/jsmn.h>
 #include <stdbool.h>
 #include <sys/_types/_size_t.h>
+
+typedef int (*jsonv_Validate_Handler)(void *);
 
 typedef struct Jsonv_SchemaNode Jsonv_SchemaNode;
 
 typedef struct Jsonv_Contraint {
   jsonv_Hint name;
   jsonv_Hint value;
+  jsonv_Validate_Handler fn;
 } Jsonv_Contraint;
 
 typedef struct Jsonv_SchemaNode {
@@ -18,8 +22,7 @@ typedef struct Jsonv_SchemaNode {
   jsonv_Hint key;
   Jsonv_SchemaNode *parent;
   // --- Constraints ---
-  int minLength;
-  int maxLength;
+  List value_contraints;
   bool required;
   bool additional_properties;
   // --- For OBJECT/ARRAY ---

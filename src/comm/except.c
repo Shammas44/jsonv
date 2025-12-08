@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include "assert.h"
 #include "except.h"
-#define T Except_T
+#define T Except
 Except_Frame *Except_stack = NULL;
 void Except_raise(const T *e, const char *file,
 	int line) {

@@ -1,15 +1,42 @@
 #include "schema.handlers.h"
+#include "assert.h"
 #include "compile.h"
+#include "hint.h"
+#include "mem.h"
 #include "schema.h"
+#include "validate.handlers.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-int jsonv_schema_handler_type(jsonv_Schema_Context *ctx) {
+#define SIMPLE_HANDLER(validator)                                              \
+  {                                                                            \
+    jsmntok_t *value = ctx->value;                                             \
+    jsmntok_t *key = ctx->key;                                                 \
+    Jsonv_SchemaNode *node = ctx->node;                                        \
+    List list = node->value_contraints;                                        \
+    Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));                   \
+    c->name = (jsonv_Hint){.start = key->start, .end = key->end};              \
+    c->value = (jsonv_Hint){.start = value->start, .end = value->end};         \
+    c->fn = validator;                                                         \
+    if (list) {                                                                \
+      list_push(list, c);                                                      \
+    } else {                                                                   \
+      node->value_contraints = list_new(c, NULL);                              \
+    }                                                                          \
+    return 0;                                                                  \
+  }
+
+// ========================================================
+// CONTRAINT: Common properties
+// ========================================================
+
+static int handler_type(jsonv_Schema_Context *ctx) {
   /*#region*/
   const char *json = ctx->json;
   jsmntok_t *value_token = ctx->value;
   Jsonv_SchemaNode *node = ctx->node;
+  // TODO use stack memory here
   char *type_str = jsonv_extract_token_string(json, value_token);
   if (!type_str) {
     jsonv_schema_free(ctx->node);
@@ -34,25 +61,18 @@ int jsonv_schema_handler_type(jsonv_Schema_Context *ctx) {
   /*#endregion*/
 }
 
-int jsonv_schema_handler_required(jsonv_Schema_Context *ctx) {
+static int handler_required(jsonv_Schema_Context *ctx) {
   /*#region*/
   const char *json = ctx->json;
   jsmntok_t *value_token = ctx->value;
   Jsonv_SchemaNode *node = ctx->node;
   jsonv_tokiterator *it = ctx->it;
-  if (value_token->type != JSMN_ARRAY) {
-    jsonv_schema_free(node);
-    return 1;
-  }
+  assert(value_token->type == JSMN_ARRAY);
 
   size_t required_count = value_token->size;
-  char **required_keys = (char **)calloc(required_count, sizeof(char *));
+  char **required_keys = CALLOC(required_count, sizeof(char *));
   node->required_keys = required_keys;
   node->required_keys_length = required_count;
-  if (!required_keys) {
-    jsonv_schema_free(node);
-    return 1;
-  }
 
   for (size_t j = 0; j < required_count; j++) {
     jsmntok_t *item_token = jsonv_tokiterator_next(it);
@@ -70,25 +90,21 @@ int jsonv_schema_handler_required(jsonv_Schema_Context *ctx) {
   /*#endregion*/
 }
 
-int jsonv_schema_handler_properties(jsonv_Schema_Context *ctx) {
+// ========================================================
+// CONTRAINT: Object Keywords (for `object`)
+// ========================================================
+
+static int handler_properties(jsonv_Schema_Context *ctx) {
   /*#region*/
   const char *json = ctx->json;
   jsmntok_t *value_token = ctx->value;
   Jsonv_SchemaNode *node = ctx->node;
   jsonv_tokiterator *it = ctx->it;
-
-  if (ctx->value->type != JSMN_OBJECT) {
-    jsonv_schema_free(node);
-    return 1;
-  }
+  assert(ctx->value->type == JSMN_OBJECT);
 
   node->property_count = value_token->size;
-  node->properties = (Jsonv_SchemaNode *)calloc(node->property_count,
-                                                sizeof(Jsonv_SchemaNode));
-  if (!node->properties) {
-    jsonv_schema_free(node);
-    return 1;
-  }
+  node->properties = CALLOC(node->property_count, sizeof(Jsonv_SchemaNode));
+
   for (size_t j = 0; j < node->property_count; j++) {
     jsmntok_t *key_token = jsonv_tokiterator_relative(it, 1);
     jsonv_tokiterator_next(it); // eat 'bracket'
@@ -101,25 +117,504 @@ int jsonv_schema_handler_properties(jsonv_Schema_Context *ctx) {
   /*#endregion*/
 }
 
-int jsonv_schema_handler_items(jsonv_Schema_Context *ctx) {
+static int validate_maxProperties(void *x) {
+  /*#region*/
+  ValidatorCtx *ctx = x;
+  Jsonv_Contraint *c = ctx->contraint;
+
+  char key_buff[100] = {0};
+  char value_buff[100] = {0};
+  char given_buff[100] = {0};
+
+  HINT(ctx->json_schema, c->name, key_buff);
+  HINT(ctx->json_schema, c->value, value_buff);
+  HINT(ctx->json_data, ctx->data->value, given_buff);
+
+  size_t expected = atoi(value_buff);
+  size_t given = ctx->data->property_count;
+
+  if (given < expected) {
+    return 1;
+  } else {
+    char *p = jsonv_build_path(ctx->data, ctx->json_data);
+    jsonv_path_reset(ctx->path);
+    JSONV_ENTER_FIELD(ctx->path, p);
+    JSONV_ERR(ctx->errors, ctx->path,
+              "[maxProperties] Expected properties count to be below %d.",
+              expected);
+    JSONV_LEAVE(ctx->path);
+    return 0;
+  }
+  /*#endregion*/
+}
+
+static int handler_maxProperties(jsonv_Schema_Context *ctx) {
+  /*#region*/
+  jsmntok_t *value = ctx->value;
+  jsmntok_t *key = ctx->key;
+  Jsonv_SchemaNode *node = ctx->node;
+  List list = node->value_contraints;
+  Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));
+  c->name = (jsonv_Hint){.start = key->start, .end = key->end};
+  c->value = (jsonv_Hint){.start = value->start, .end = value->end};
+  c->fn = validate_maxProperties;
+  if (list) {
+    node->value_contraints = list_push(list, c);
+  } else {
+    node->value_contraints = list_new(c, NULL);
+  }
+  return 0;
+  /*#endregion*/
+}
+
+static int validate_minProperties(void *x) {
+  /*#region*/
+  ValidatorCtx *ctx = x;
+  Jsonv_Contraint *c = ctx->contraint;
+
+  char key_buff[100] = {0};
+  char value_buff[100] = {0};
+  char given_buff[100] = {0};
+
+  HINT(ctx->json_schema, c->name, key_buff);
+  HINT(ctx->json_schema, c->value, value_buff);
+  HINT(ctx->json_data, ctx->data->value, given_buff);
+
+  size_t expected = atoi(value_buff);
+  size_t given = ctx->data->property_count;
+
+  if (given > expected) {
+    return 1;
+  } else {
+    char *p = jsonv_build_path(ctx->data, ctx->json_data);
+    jsonv_path_reset(ctx->path);
+    JSONV_ENTER_FIELD(ctx->path, p);
+    JSONV_ERR(ctx->errors, ctx->path,
+              "[minProperties] Expected properties count to be at least %d.",
+              expected);
+    JSONV_LEAVE(ctx->path);
+    return 0;
+  }
+  /*#endregion*/
+}
+
+static int handler_minProperties(jsonv_Schema_Context *ctx) {
+  /*#region*/
+  puts("=== min");
+  jsmntok_t *value = ctx->value;
+  jsmntok_t *key = ctx->key;
+  Jsonv_SchemaNode *node = ctx->node;
+  List list = node->value_contraints;
+  Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));
+  c->name = (jsonv_Hint){.start = key->start, .end = key->end};
+  c->value = (jsonv_Hint){.start = value->start, .end = value->end};
+  c->fn = validate_minProperties;
+  if (list) {
+    node->value_contraints = list_push(list, c);
+  } else {
+    node->value_contraints = list_new(c, NULL);
+  }
+  return 0;
+  /*#endregion*/
+}
+
+// ========================================================
+// CONTRAINT: Array Keywords (for `array`)
+// ========================================================
+
+static int handler_items(jsonv_Schema_Context *ctx) {
   /*#region*/
   const char *json = ctx->json;
   Jsonv_SchemaNode *node = ctx->node;
   jsonv_tokiterator *it = ctx->it;
-
-  if (ctx->value->type != JSMN_OBJECT) {
-    jsonv_schema_free(node);
-    return 1;
-  }
-
-  node->items = (Jsonv_SchemaNode *)calloc(1, sizeof(Jsonv_SchemaNode));
-  if (!node->items) {
-    jsonv_schema_free(node);
-    return 1;
-  }
-
+  assert(ctx->value->type == JSMN_OBJECT);
+  node->items = CALLOC(1, sizeof(Jsonv_SchemaNode));
   ctx->node = node->items;
   node->items = jsonv_compile_schema(json, it);
   return 0;
   /*#endregion*/
 }
+
+// ========================================================
+// CONTRAINT: Numeric Keywords (for `number` and `integer`)
+// ========================================================
+
+static int validate_multiplOf(void *x) {
+  /*#region*/
+  ValidatorCtx *ctx = x;
+  Jsonv_Contraint *c = ctx->contraint;
+
+  char key_buff[100] = {0};
+  char value_buff[100] = {0};
+  char given_buff[100] = {0};
+
+  HINT(ctx->json_schema, c->name, key_buff);
+  HINT(ctx->json_schema, c->value, value_buff);
+  HINT(ctx->json_data, ctx->data->value, given_buff);
+
+  int expected = atoi(value_buff);
+  int given = atoi(given_buff);
+
+  if (given % expected == 0 && given > 0) {
+    return 1;
+  } else {
+    char *p = jsonv_build_path(ctx->data, ctx->json_data);
+    jsonv_path_reset(ctx->path);
+    JSONV_ENTER_FIELD(ctx->path, p);
+    JSONV_ERR(ctx->errors, ctx->path,
+              "[multipleOf] Expected value to be non zero and multiple of %d.",
+              expected);
+    JSONV_LEAVE(ctx->path);
+    return 0;
+  }
+  /*#endregion*/
+}
+
+static int handler_multipleOf(jsonv_Schema_Context *ctx) {
+  /*#region*/
+  jsmntok_t *value = ctx->value;
+  jsmntok_t *key = ctx->key;
+  Jsonv_SchemaNode *node = ctx->node;
+  List list = node->value_contraints;
+  Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));
+  c->name = (jsonv_Hint){.start = key->start, .end = key->end};
+  c->value = (jsonv_Hint){.start = value->start, .end = value->end};
+  c->fn = validate_multiplOf;
+  if (list) {
+    node->value_contraints = list_push(list, c);
+  } else {
+    node->value_contraints = list_new(c, NULL);
+  }
+  return 0;
+  /*#endregion*/
+}
+
+static int validate_maximum(void *x) {
+  /*#region*/
+  ValidatorCtx *ctx = x;
+  Jsonv_Contraint *c = ctx->contraint;
+
+  char key_buff[100] = {0};
+  char value_buff[100] = {0};
+  char given_buff[100] = {0};
+
+  HINT(ctx->json_schema, c->name, key_buff);
+  HINT(ctx->json_schema, c->value, value_buff);
+  HINT(ctx->json_data, ctx->data->value, given_buff);
+
+  double expected = atof(value_buff);
+  double given = atof(given_buff);
+
+  if (given <= expected) {
+    return 1;
+  } else {
+    char *p = jsonv_build_path(ctx->data, ctx->json_data);
+    jsonv_path_reset(ctx->path);
+    JSONV_ENTER_FIELD(ctx->path, p);
+    JSONV_ERR(ctx->errors, ctx->path,
+              "[maximum] Expected value to be below %f.", expected);
+    JSONV_LEAVE(ctx->path);
+    return 0;
+  }
+  /*#endregion*/
+}
+
+static int handler_maximum(jsonv_Schema_Context *ctx) {
+  /*#region*/
+  jsmntok_t *value = ctx->value;
+  jsmntok_t *key = ctx->key;
+  Jsonv_SchemaNode *node = ctx->node;
+  List list = node->value_contraints;
+  Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));
+  c->name = (jsonv_Hint){.start = key->start, .end = key->end};
+  c->value = (jsonv_Hint){.start = value->start, .end = value->end};
+  c->fn = validate_maximum;
+  if (list) {
+    node->value_contraints = list_push(list, c);
+  } else {
+    node->value_contraints = list_new(c, NULL);
+  }
+  return 0;
+  /*#endregion*/
+}
+
+static int validate_exclusiveMaximum(void *x) {
+  /*#region*/
+  ValidatorCtx *ctx = x;
+  Jsonv_Contraint *c = ctx->contraint;
+
+  char key_buff[100] = {0};
+  char value_buff[100] = {0};
+  char given_buff[100] = {0};
+
+  HINT(ctx->json_schema, c->name, key_buff);
+  HINT(ctx->json_schema, c->value, value_buff);
+  HINT(ctx->json_data, ctx->data->value, given_buff);
+
+  double expected = atof(value_buff);
+  double given = atof(given_buff);
+
+  if (given > expected) {
+    return 1;
+  } else {
+    char *p = jsonv_build_path(ctx->data, ctx->json_data);
+    jsonv_path_reset(ctx->path);
+    JSONV_ENTER_FIELD(ctx->path, p);
+    JSONV_ERR(ctx->errors, ctx->path,
+              "[exclusiveMaximum] Expected value to be strictly below %f.",
+              expected);
+    JSONV_LEAVE(ctx->path);
+    return 0;
+  }
+  /*#endregion*/
+}
+
+static int handler_exclusiveMaximum(jsonv_Schema_Context *ctx) {
+  /*#region*/
+  jsmntok_t *value = ctx->value;
+  jsmntok_t *key = ctx->key;
+  Jsonv_SchemaNode *node = ctx->node;
+  List list = node->value_contraints;
+  Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));
+  c->name = (jsonv_Hint){.start = key->start, .end = key->end};
+  c->value = (jsonv_Hint){.start = value->start, .end = value->end};
+  c->fn = validate_exclusiveMaximum;
+  if (list) {
+    node->value_contraints = list_push(list, c);
+  } else {
+    node->value_contraints = list_new(c, NULL);
+  }
+  return 0;
+  /*#endregion*/
+}
+
+static int validate_exclusiveMinimum(void *x) {
+  /*#region*/
+  ValidatorCtx *ctx = x;
+  Jsonv_Contraint *c = ctx->contraint;
+
+  char key_buff[100] = {0};
+  char value_buff[100] = {0};
+  char given_buff[100] = {0};
+
+  HINT(ctx->json_schema, c->name, key_buff);
+  HINT(ctx->json_schema, c->value, value_buff);
+  HINT(ctx->json_data, ctx->data->value, given_buff);
+
+  double expected = atof(value_buff);
+  double given = atof(given_buff);
+
+  if (given > expected) {
+    return 1;
+  } else {
+    char *p = jsonv_build_path(ctx->data, ctx->json_data);
+    jsonv_path_reset(ctx->path);
+    JSONV_ENTER_FIELD(ctx->path, p);
+    JSONV_ERR(ctx->errors, ctx->path,
+              "[exclusiveMinimum] Expected value to be strictly above %f.",
+              expected);
+    JSONV_LEAVE(ctx->path);
+    return 0;
+  }
+  /*#endregion*/
+}
+
+static int handler_exclusiveMinimum(jsonv_Schema_Context *ctx) {
+  /*#region*/
+  jsmntok_t *value = ctx->value;
+  jsmntok_t *key = ctx->key;
+  Jsonv_SchemaNode *node = ctx->node;
+  List list = node->value_contraints;
+  Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));
+  c->name = (jsonv_Hint){.start = key->start, .end = key->end};
+  c->value = (jsonv_Hint){.start = value->start, .end = value->end};
+  c->fn = validate_exclusiveMinimum;
+  if (list) {
+    node->value_contraints = list_push(list, c);
+  } else {
+    node->value_contraints = list_new(c, NULL);
+  }
+  return 0;
+  /*#endregion*/
+}
+
+static int validate_minimum(void *x) {
+  /*#region*/
+  ValidatorCtx *ctx = x;
+  Jsonv_Contraint *c = ctx->contraint;
+
+  char key_buff[100] = {0};
+  char value_buff[100] = {0};
+  char given_buff[100] = {0};
+
+  HINT(ctx->json_schema, c->name, key_buff);
+  HINT(ctx->json_schema, c->value, value_buff);
+  HINT(ctx->json_data, ctx->data->value, given_buff);
+
+  double expected = atof(value_buff);
+  double given = atof(given_buff);
+
+  if (given >= expected) {
+    return 1;
+  } else {
+    char *p = jsonv_build_path(ctx->data, ctx->json_data);
+    jsonv_path_reset(ctx->path);
+    JSONV_ENTER_FIELD(ctx->path, p);
+    JSONV_ERR(ctx->errors, ctx->path,
+              "[minimum] Expected value to be above %f.", expected);
+    JSONV_LEAVE(ctx->path);
+    return 0;
+  }
+  /*#endregion*/
+}
+
+static int handler_minimum(jsonv_Schema_Context *ctx) {
+  /*#region*/
+  jsmntok_t *value = ctx->value;
+  jsmntok_t *key = ctx->key;
+  Jsonv_SchemaNode *node = ctx->node;
+  List list = node->value_contraints;
+  Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));
+  c->name = (jsonv_Hint){.start = key->start, .end = key->end};
+  c->value = (jsonv_Hint){.start = value->start, .end = value->end};
+  c->fn = validate_minimum;
+  if (list) {
+    node->value_contraints = list_push(list, c);
+  } else {
+    node->value_contraints = list_new(c, NULL);
+  }
+  return 0;
+  /*#endregion*/
+}
+
+// ========================================================
+// CONTRAINT: String Keywords (for `string`)
+// ========================================================
+
+static int validate_minLength(void *x) {
+  /*#region*/
+  ValidatorCtx *ctx = x;
+  Jsonv_Contraint *c = ctx->contraint;
+
+  char key_buff[100] = {0};
+  char value_buff[100] = {0};
+  char given_buff[100] = {0};
+
+  HINT(ctx->json_schema, c->name, key_buff);
+  HINT(ctx->json_schema, c->value, value_buff);
+  HINT(ctx->json_data, ctx->data->value, given_buff);
+  int given = ctx->data->value.end - ctx->data->value.start;
+
+  int expected = atoi(value_buff);
+
+  if (given >= expected && given >= 0) {
+    return 1;
+  } else {
+    char *p = jsonv_build_path(ctx->data, ctx->json_data);
+    jsonv_path_reset(ctx->path);
+    JSONV_ENTER_FIELD(ctx->path, p);
+    JSONV_ERR(ctx->errors, ctx->path,
+              "[minLength] Expected length to be non-negative and above or "
+              "equal to %d.",
+              expected);
+    JSONV_LEAVE(ctx->path);
+    return 0;
+  }
+  /*#endregion*/
+}
+
+static int handler_minLength(jsonv_Schema_Context *ctx) {
+  /*#region*/
+  jsmntok_t *value = ctx->value;
+  jsmntok_t *key = ctx->key;
+  Jsonv_SchemaNode *node = ctx->node;
+  List list = node->value_contraints;
+  Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));
+  c->name = (jsonv_Hint){.start = key->start, .end = key->end};
+  c->value = (jsonv_Hint){.start = value->start, .end = value->end};
+  c->fn = validate_minLength;
+  if (list) {
+    node->value_contraints = list_push(list, c);
+  } else {
+    node->value_contraints = list_new(c, NULL);
+  }
+  return 0;
+  /*#endregion*/
+}
+
+static int validate_maxLength(void *x) {
+  /*#region*/
+  ValidatorCtx *ctx = x;
+  Jsonv_Contraint *c = ctx->contraint;
+
+  char key_buff[100] = {0};
+  char value_buff[100] = {0};
+  char given_buff[100] = {0};
+
+  HINT(ctx->json_schema, c->name, key_buff);
+  HINT(ctx->json_schema, c->value, value_buff);
+  HINT(ctx->json_data, ctx->data->value, given_buff);
+  int given = ctx->data->value.end - ctx->data->value.start;
+
+  int expected = atoi(value_buff);
+
+  if (given <= expected && given >= 0) {
+    return 1;
+  } else {
+    char *p = jsonv_build_path(ctx->data, ctx->json_data);
+    jsonv_path_reset(ctx->path);
+    JSONV_ENTER_FIELD(ctx->path, p);
+    JSONV_ERR(ctx->errors, ctx->path,
+              "[maxLength] Expected length to be non-negative and less or "
+              "equal to %d.",
+              expected);
+    JSONV_LEAVE(ctx->path);
+    return 0;
+  }
+  /*#endregion*/
+}
+
+static int handler_maxLength(jsonv_Schema_Context *ctx) {
+  /*#region*/
+  jsmntok_t *value = ctx->value;
+  jsmntok_t *key = ctx->key;
+  Jsonv_SchemaNode *node = ctx->node;
+  List list = node->value_contraints;
+  Jsonv_Contraint *c = CALLOC(1, sizeof(Jsonv_Contraint));
+  c->name = (jsonv_Hint){.start = key->start, .end = key->end};
+  c->value = (jsonv_Hint){.start = value->start, .end = value->end};
+  c->fn = validate_maxLength;
+  if (list) {
+    node->value_contraints = list_push(list, c);
+  } else {
+    node->value_contraints = list_new(c, NULL);
+  }
+  return 0;
+  /*#endregion*/
+}
+
+#define HANDLER(name)                                                          \
+  { #name, handler_##name }
+
+Schema_Handler g_handlers[] = {
+    // common
+    HANDLER(type),
+    HANDLER(required),
+    // object
+    HANDLER(properties),
+    HANDLER(minProperties),
+    HANDLER(maxProperties),
+    // array
+    HANDLER(items),
+    // number
+    HANDLER(multipleOf),
+    HANDLER(maximum),
+    HANDLER(minimum),
+    HANDLER(exclusiveMaximum),
+    HANDLER(exclusiveMinimum),
+    // number
+    HANDLER(maxLength),
+    HANDLER(minLength),
+};
+
+size_t g_handlers_length = sizeof(g_handlers) / sizeof(g_handlers[0]);

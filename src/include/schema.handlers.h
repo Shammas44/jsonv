@@ -13,8 +13,9 @@ typedef struct {
 
 typedef int (*jsonv_Schema_Handler)(jsonv_Schema_Context *ctx);
 
-int jsonv_schema_handler_properties(jsonv_Schema_Context *ctx);
-int jsonv_schema_handler_required(jsonv_Schema_Context *ctx);
-int jsonv_schema_handler_type(jsonv_Schema_Context *ctx);
-int jsonv_schema_handler_items(jsonv_Schema_Context *ctx);
+typedef struct Schema_Handler {
+  const char *key;
+  jsonv_Schema_Handler handler;
+} Schema_Handler;
+
 #endif

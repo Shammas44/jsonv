@@ -1,17 +1,19 @@
 #include "schema.h"
 #include "assert.h"
 #include "compile.h"
+#include "hint.h"
+#include "mem.h"
 #include "schema.handlers.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/**
- * Recursively compiles a section of the JSON Schema (defined by token_index)
- * into a SchemaNode C structure.
- */
+extern Schema_Handler g_handlers[];
+extern size_t g_handlers_length;
+
 Jsonv_SchemaNode *jsonv_compile_schema(const char *json,
                                        jsonv_tokiterator *it) {
+  /*#region*/
   int token_index = jsonv_tokiterator_index(it);
   jsmntok_t *current_token = jsonv_tokiterator_current(it);
 
@@ -19,14 +21,9 @@ Jsonv_SchemaNode *jsonv_compile_schema(const char *json,
     return NULL;
   }
 
-  Jsonv_SchemaNode *node =
-      (Jsonv_SchemaNode *)calloc(1, sizeof(Jsonv_SchemaNode));
-  if (node == NULL)
-    return NULL;
+  Jsonv_SchemaNode *node = CALLOC(1, sizeof(Jsonv_SchemaNode));
 
   // Initialize defaults
-  node->minLength = -1;
-  node->maxLength = -1;
   node->type = jsonv_UNKNOWN;
   node->additional_properties = false;
 
@@ -38,13 +35,7 @@ Jsonv_SchemaNode *jsonv_compile_schema(const char *json,
 
     // 2. ISOLATE THE JUMP: Calculate the index of the next KEY token.
     char key[100] = {0};
-    int len = key_token->end - key_token->start;
-    strncpy(key, json + key_token->start, len);
-
-    typedef struct {
-      char *key;
-      jsonv_Schema_Handler handler;
-    } K;
+    TOK(json, *key_token, key);
 
     jsonv_Schema_Context ctx = {.node = node,
                                 .value = value_token,
@@ -52,17 +43,9 @@ Jsonv_SchemaNode *jsonv_compile_schema(const char *json,
                                 .json = json,
                                 .it = it};
 
-    // ... [other keywords: $schema, $id, title, description, minLength,
-    // maxLength, items, etc. are implicitly skipped here] ...
-    // #define
-    static K handlers[] = {{"type", jsonv_schema_handler_type},
-                           {"properties", jsonv_schema_handler_properties},
-                           {"items", jsonv_schema_handler_items},
-                           {"required", jsonv_schema_handler_required}};
-    for (unsigned long i = 0; i < (sizeof(handlers) / sizeof(handlers[0]));
-         i++) {
-      if (strcmp(key, handlers[i].key) == 0) {
-        int e = handlers[i].handler(&ctx);
+    for (unsigned long j = 0; j < g_handlers_length; j++) {
+      if (strcmp(key, g_handlers[j].key) == 0) {
+        int e = g_handlers[j].handler(&ctx);
         assert(!e);
         break;
       }
@@ -93,6 +76,7 @@ Jsonv_SchemaNode *jsonv_compile_schema(const char *json,
     free(required_keys);
   }
   return node;
+  /*#endregion*/
 }
 
 void jsonv_schema_free(Jsonv_SchemaNode *node) {
