@@ -46,7 +46,9 @@ static void cleanup_node_internals(Jsonv_DataNode *node) {
 }
 
 Jsonv_DataNode *jsonv_compile_data(const char *json, jsonv_tokiterator *it,
-                                   Jsonv_DataNode *parent) {
+                                   Jsonv_DataNode *parent, Jsonv_path *path,
+                                   Jsonv_error_stack *errors){
+/*#region*/
   jsmntok_t *tok = jsonv_tokiterator_current(it);
   if (!tok)
     return NULL;
@@ -102,7 +104,7 @@ Jsonv_DataNode *jsonv_compile_data(const char *json, jsonv_tokiterator *it,
       /* advance to the value token */
       jsonv_tokiterator_next(it);
 
-      child = jsonv_compile_data(json, it, node);
+      child = jsonv_compile_data(json, it, node, path, errors);
       if (!child) {
         fprintf(stderr, "Failed to compile child.\n");
         node->property_count = i;
@@ -115,7 +117,7 @@ Jsonv_DataNode *jsonv_compile_data(const char *json, jsonv_tokiterator *it,
 
     /* --- ARRAY ENTRY: no key, just a value --- */
     else if (tok->type == JSMN_ARRAY) {
-      child = jsonv_compile_data(json, it, node);
+      child = jsonv_compile_data(json, it, node, path, errors);
 
       if (!child) {
         fprintf(stderr, "Failed to compile child.\n");
@@ -132,6 +134,7 @@ Jsonv_DataNode *jsonv_compile_data(const char *json, jsonv_tokiterator *it,
   }
 
   return node;
+/*#endregion*/
 }
 
 void jsonv_data_free(Jsonv_DataNode *node) {
@@ -149,7 +152,7 @@ void jsonv_data_free(Jsonv_DataNode *node) {
  *
  * Returned string must be free()'d by the caller.
  */
-char *jsonv_build_path(const Jsonv_DataNode *node, const char *json) {
+char *jsonv_build_data_path(const Jsonv_DataNode *node, const char *json) {
   if (!node)
     return strdup("$");
 
@@ -219,3 +222,4 @@ char *jsonv_build_path(const Jsonv_DataNode *node, const char *json) {
 
   return path;
 }
+

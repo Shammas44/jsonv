@@ -37,5 +37,6 @@ typedef struct Jsonv_SchemaNode {
 
 // Frees the memory allocated for a compiled schema node.
 void jsonv_schema_free(Jsonv_SchemaNode *node);
+char *jsonv_build_schema_path(const Jsonv_SchemaNode *node, const char *json);
 
 #endif

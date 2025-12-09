@@ -80,12 +80,12 @@ LDLIBS := -l$(PROJECT_NAME) $(LINK_USER_SHARED_LIBS)
 SRC_INCLUDE_PATHS := $(shell find $(SRC_DIR) -type d)
 INC_FLAGS := $(patsubst %, -I%, $(SRC_INCLUDE_PATHS)) -I/usr/local/include $(patsubst %, -I%, $(STATIC_LIB_INCLUDE_PATHS))
 
-MAIN_APP_STATIC := $(BIN_DIR)/main_s
+MAIN_APP_STATIC := $(BIN_DIR)/main
 MAIN_APP_DYNAMIC := $(BIN_DIR)/main_d
 TEST_APP := $(BIN_DIR)/test_runner
 
 # --- Phony Targets ---
-.PHONY: all static shared test main_d run run_test clean install uninstall bear dirs main_s run_d
+.PHONY: all static shared test main_d run run_test clean install uninstall bear dirs main run_d
 
 # --- Main Targets ---
 all: static
@@ -118,16 +118,16 @@ $(MAIN_APP_DYNAMIC): $(OBJ_DIR)/main.o $(LIB_DIR)/lib$(PROJECT_NAME).so | dirs
 	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) -Wl,-rpath,$(INSTALL_LIB_DIR)
 
 # --- Main Executable (Static Link) ---
-main_s: static $(MAIN_APP_STATIC) # Ensure the static library is built first
+main: static $(MAIN_APP_STATIC) # Ensure the static library is built first
 $(MAIN_APP_STATIC): $(OBJ_DIR)/main.o $(LIB_DIR)/lib$(PROJECT_NAME).a | dirs
 	@echo "[CC] Linking STATIC $@"
 	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LINK_USER_SHARED_LIBS)
 
 # --- Test Executable ---
-test: $(TEST_APP)
-$(TEST_APP): $(TEST_OBJS) $(LIB_DIR)/lib$(PROJECT_NAME).so | dirs
+test: static $(TEST_APP)
+$(TEST_APP): $(TEST_OBJS) $(LIB_DIR)/lib$(PROJECT_NAME).a | dirs
 	@echo "[CC] Linking $@"
-	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) $(LINK_TEST_LIBS) -Wl,-rpath,$(INSTALL_LIB_DIR)
+	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LINK_TEST_LIBS) $(LINK_USER_SHARED_LIBS)
 
 # --- Compile Rules ---
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | dirs
@@ -158,9 +158,6 @@ uninstall:
 
 # --- Run Targets ---
 run: $(MAIN_APP_STATIC)
-	@$(MAIN_APP_STATIC)
-
-run_s: $(MAIN_APP_STATIC)
 	@$(MAIN_APP_STATIC)
 
 run_d: $(MAIN_APP_DYNAMIC)

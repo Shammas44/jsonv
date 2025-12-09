@@ -130,7 +130,7 @@ int main() {
 
   jsmntok_t *s_tok = NULL;
   e = jsonv_ctx_prepare_schema(&ctx, json_schema, &s_tok);
-  if (e <= 0) {
+  if (e < 0) {
     print_error(ctx);
     goto clean;
   }

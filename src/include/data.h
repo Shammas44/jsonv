@@ -18,5 +18,5 @@ typedef struct Jsonv_DataNode {
 
 void jsonv_data_free(Jsonv_DataNode *node);
 
-char *jsonv_build_path(const Jsonv_DataNode *node, const char *json);
+char *jsonv_build_data_path(const Jsonv_DataNode *node, const char *json);
 #endif

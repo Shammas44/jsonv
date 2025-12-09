@@ -10,7 +10,7 @@ static char *data_type[] = {"string", "number", "integer", "boolean",
                             "object", "array",  "null",    "unknown"};
 
 #define ERROR(format, ...)                                                     \
-  char *p = jsonv_build_path(data, json_data);                                 \
+  char *p = jsonv_build_data_path(data, json_data);                                 \
   jsonv_path_reset(path);                                                      \
   JSONV_ENTER_FIELD(path, p);                                                  \
   JSONV_ERR(errors, path, format, __VA_ARGS__);                                \
