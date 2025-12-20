@@ -32,7 +32,7 @@
   char *p = jsonv_build_data_path(ctx->data, ctx->json_data);                  \
   jsonv_path_reset(ctx->path);                                                 \
   JSONV_ENTER_FIELD(ctx->path, p);                                             \
-  JSONV_ERR(ctx->errors, ctx->path, format, __VA_ARGS__);                      \
+  JSONV_ERR(ctx->errors, ctx->path, format, ##__VA_ARGS__);                    \
   JSONV_LEAVE(ctx->path);
 
 // ========================================================
@@ -119,8 +119,9 @@ static int handler_properties(jsonv_Schema_Context *ctx) {
     jsonv_tokiterator_next(it); // eat 'key'
     node->properties[j].key =
         (jsonv_Hint){.start = key_token->start, .end = key_token->end};
-    node->properties[j] = *jsonv_compile_schema(json, it, node, ctx->path, ctx->errors);
-    //TODO key must be set in jsonv_compile_schema
+    node->properties[j] =
+        *jsonv_compile_schema(json, it, node, ctx->path, ctx->errors);
+    // TODO key must be set in jsonv_compile_schema
   }
   return 0;
   /*#endregion*/
@@ -145,7 +146,7 @@ static int validate_maxProperties(void *x) {
   if (given < expected) {
     return 1;
   } else {
-    ERROR("[maxProperties] Expected properties count to be below %d.",
+    ERROR("[maxProperties] Expected properties count to be below %zu.",
           expected);
     return 0;
   }
@@ -208,7 +209,7 @@ static int validate_minProperties(void *x) {
   if (given > expected) {
     return 1;
   } else {
-    ERROR("[minProperties] Expected properties count to be at least %d.",
+    ERROR("[minProperties] Expected properties count to be at least %zu.",
           expected);
     return 0;
   }
@@ -246,7 +247,8 @@ static int handler_items(jsonv_Schema_Context *ctx) {
   assert(ctx->value->type == JSMN_OBJECT);
   node->items = CALLOC(1, sizeof(Jsonv_SchemaNode));
   ctx->schema = node->items;
-  node->items = jsonv_compile_schema(json, it, node->parent, ctx->path, ctx->errors);
+  node->items =
+      jsonv_compile_schema(json, it, node->parent, ctx->path, ctx->errors);
   return 0;
   /*#endregion*/
 }
@@ -547,9 +549,7 @@ static int validate_maxLength(void *x) {
   if (given <= expected && given >= 0) {
     return 1;
   } else {
-    ERROR("[maxLength] Expected length to be non-negative and less or "
-          "equal to %d.",
-          expected);
+    ERROR("[maxLength] Expected length to be non-negative and less or equal to %d.", expected);
     return 0;
   }
   /*#endregion*/

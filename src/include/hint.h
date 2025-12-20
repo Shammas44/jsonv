@@ -1,6 +1,6 @@
 #ifndef _JSONV_HINT_H_INCLUDED
 #define _JSONV_HINT_H_INCLUDED
-#include <jsmn/jsmn.h>
+#include "jsmn.h"
 
 typedef struct {
   int start;

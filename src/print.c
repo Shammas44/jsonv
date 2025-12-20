@@ -1,4 +1,6 @@
 #include "print.h"
+#include "assert.h"
+#include "node.h"
 #include "schema.h"
 #include <stdio.h>
 #include <string.h>
@@ -158,6 +160,93 @@ void jsonv_print_data_internal(const Jsonv_DataNode *node, int depth,
     // Primitive: Print without quotes.
     print_hint_internal(json, node->value, 40);
     printf("\n");
+    break;
+
+  default:
+    printf(" (UNKNOWN TYPE)\n");
+    break;
+  }
+  /*#endregion*/
+}
+
+static void print_hint_node_internal(Jsonv_Boundary boundary, int max_len) {
+  /*#region*/
+  if (boundary.end > boundary.start) {
+    int len = boundary.end - boundary.start;
+    int print_len = (len < max_len) ? len : max_len;
+    printf("%.*s", print_len, boundary.start);
+    if (len > max_len)
+      printf("...");
+  }
+  /*#endregion*/
+}
+
+void jsonv_print_node_internal(const Jsonv_Node *node, int depth,
+                               const char *json) {
+  /*#region*/
+  assert(node);
+  assert(json);
+  bool is_array_item = node->parent && node->parent->type == JSONV_NODE_T_ARRAY;
+
+  // 1. Print indentation
+  print_indent(depth > 0 ? depth - 1 : depth);
+
+  // 2. Print prefix (key: or - ) and a space.
+  if (is_array_item) {
+    printf("- ");
+  } else if (node->parent && node->parent->type == JSONV_NODE_T_OBJECT) {
+    print_hint_node_internal(node->key, 40);
+    printf(": ");
+  } else if (node->type == JSONV_NODE_T_OBJECT &&
+             ((Jsonv_Node_Container *)node)->length == 0) {
+    print_hint_node_internal(node->key, 40);
+    printf(": {}");
+  } else if (node->type == JSONV_NODE_T_ARRAY &&
+             ((Jsonv_Node_Container *)node)->length == 0) {
+    print_hint_node_internal(node->key, 40);
+    printf(": []");
+  } else if (node->parent && node->parent->type == JSONV_NODE_T_ROOT) {
+    print_hint_node_internal(node->key, 40);
+    printf(": ");
+  }
+  // 3. Print the node's value or structural newline/recursion
+  switch (node->type) {
+  case JSONV_NODE_T_ROOT:
+    printf("\n");
+    Jsonv_Node_Container *c = (Jsonv_Node_Container *)node;
+    for (size_t i = 0; i < c->length; i++) {
+      jsonv_print_node_internal(c->items[i], depth + 1, json);
+    }
+    break;
+  case JSONV_NODE_T_OBJECT:
+    printf("(depth %zu)\n", ((Jsonv_Node_Container *)node)->depth);
+    Jsonv_Node_Container *c1 = (Jsonv_Node_Container *)node;
+    for (size_t i = 0; i < c1->length; i++) {
+      jsonv_print_node_internal(c1->items[i], depth + 1, json);
+    }
+    break;
+  case JSONV_NODE_T_ARRAY:
+    printf("(depth %zu)\n", ((Jsonv_Node_Container *)node)->depth);
+    Jsonv_Node_Container *c2 = (Jsonv_Node_Container *)node;
+    for (size_t i = 0; i < c2->length; i++) {
+      jsonv_print_node_internal(c2->items[i], depth + 1, json);
+    }
+    break;
+
+  case JSONV_NODE_T_STRING:
+    printf("'");
+    print_hint_node_internal(((Jsonv_Node_String *)node)->value, 40);
+    printf("'\n");
+    break;
+
+  case JSONV_NODE_T_NUMBER:
+    printf("%f\n", ((Jsonv_Node_Number *)node)->value);
+    break;
+  case JSONV_NODE_T_BOOL:
+    printf("%s\n", ((Jsonv_Node_Bool *)node)->value ? "true" : "false");
+    break;
+  case JSONV_NODE_T_NULL:
+    printf("null\n");
     break;
 
   default:

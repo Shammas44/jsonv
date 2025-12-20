@@ -2,8 +2,8 @@
 #define _JSONV_DATA_H_INCLUDED
 #include "hint.h"
 #include "type.h"
-#include <jsmn/jsmn.h>
-#include <sys/_types/_size_t.h>
+#include "jsmn.h"
+#include <stdio.h>
 
 typedef struct Jsonv_DataNode Jsonv_DataNode;
 

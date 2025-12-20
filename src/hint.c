@@ -1,5 +1,5 @@
 #include "hint.h"
-#include "jsmn/jsmn.h"
+#include "jsmn.h"
 #include <string.h>
 
 void hint_to_char(const char *json, jsonv_Hint hint, char *buff) {

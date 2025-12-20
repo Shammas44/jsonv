@@ -1,7 +1,31 @@
 #ifndef _JSONV_TOKEN_H_INCLUDED
 #define _JSONV_TOKEN_H_INCLUDED
-#include <jsmn/jsmn.h>
+#include "jsmn.h"
+#include <stdio.h>
+
 #define T jsonv_tokiterator
+
+typedef enum {
+  T_BRACE_OPEN,
+  T_BRACE_CLOSE,
+  T_BRACKET_OPEN,
+  T_BRACKET_CLOSE,
+  T_STRING,
+  T_NUMBER,
+  T_LITERAL,
+  T_COLON,
+  T_COMMA,
+  T_EOF,
+  T_ERROR
+} TokenType;
+
+typedef struct {
+  TokenType type;
+  // Pointers to the start and end of the token in the source string.
+  // This avoids copying the token value until needed.
+  const char *start;
+  size_t length;
+} Token;
 
 typedef struct T T;
 

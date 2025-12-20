@@ -4,4 +4,5 @@
 
 bool parse_int(const char *s, int *out);
 
+bool parse_double(const char *s, double *out);
 #endif

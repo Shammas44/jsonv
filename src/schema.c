@@ -34,7 +34,6 @@ Jsonv_SchemaNode *jsonv_compile_schema(const char *json, jsonv_tokiterator *it,
   if(parent != NULL){
   jsmntok_t *key_token = jsonv_tokiterator_relative(it, -1);
   TOK(json, *key_token, bff);
-  printf("key: %s\n", bff);
   }
 
   // --- Pass 1: Parse All Keywords and Recursively Compile Sub-Schemas ---

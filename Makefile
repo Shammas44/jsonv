@@ -38,6 +38,10 @@ else
     SHARED_LDFLAGS := -Wl,-soname,lib$(PROJECT_NAME).so
 endif
 
+# --- AFL++ Fuzzing Tools (Used inside Docker) ---
+AFL_CC := afl-clang-lto
+AFL_CFLAGS := -Wall -Wextra -Werror -g -fPIC -O3
+
 # --- Build Options ---
 BASE_CFLAGS := -Wall -Wextra -Werror
 ifeq ($(OPTION), prod)
@@ -60,12 +64,14 @@ TEST_DIR := tests
 PREFIX := /usr/local
 INSTALL_LIB_DIR := $(PREFIX)/lib
 INSTALL_INCLUDE_DIR := $(PREFIX)/include/$(PROJECT_NAME)
+FUZZ_LIB := $(LIB_DIR)/lib$(PROJECT_NAME)_fuzz.a
 
 # --- Source Files and Objects ---
 SRC_FILES := $(shell find $(SRC_DIR) -type f -name "*.c")
 OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_FILES))
 TEST_SRC_FILES := $(wildcard $(TEST_DIR)/*.c)
 TEST_OBJS := $(patsubst $(TEST_DIR)/%.c,$(OBJ_DIR)/test_%.o,$(TEST_SRC_FILES))
+FUZZ_OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/fuzz_%.o,$(SRC_FILES))
 
 # --- Libraries ---
 TEST_LIBS := criterion
@@ -83,9 +89,10 @@ INC_FLAGS := $(patsubst %, -I%, $(SRC_INCLUDE_PATHS)) -I/usr/local/include $(pat
 MAIN_APP_STATIC := $(BIN_DIR)/main
 MAIN_APP_DYNAMIC := $(BIN_DIR)/main_d
 TEST_APP := $(BIN_DIR)/test_runner
+FUZZ_APP := $(BIN_DIR)/fuzz
 
 # --- Phony Targets ---
-.PHONY: all static shared test main_d run run_test clean install uninstall bear dirs main run_d
+.PHONY: all static shared test main_d run run_test clean install uninstall bear dirs main run_d fuzz run_fuzz run_docker_afl
 
 # --- Main Targets ---
 all: static
@@ -103,6 +110,13 @@ dirs:
 static: $(LIB_DIR)/lib$(PROJECT_NAME).a
 $(LIB_DIR)/lib$(PROJECT_NAME).a: $(OBJS) | dirs
 	@echo "[AR] $@"
+	@$(AR) rcs $@ $^
+
+fuzz: $(FUZZ_LIB) $(FUZZ_APP)
+
+# --- Build Fuzz Static Library ---
+$(FUZZ_LIB): $(FUZZ_OBJS) | dirs
+	@echo "[AR] Building Fuzzing Library $@"
 	@$(AR) rcs $@ $^
 
 # --- Build Shared Library ---
@@ -123,6 +137,17 @@ $(MAIN_APP_STATIC): $(OBJ_DIR)/main.o $(LIB_DIR)/lib$(PROJECT_NAME).a | dirs
 	@echo "[CC] Linking STATIC $@"
 	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LINK_USER_SHARED_LIBS)
 
+# --- Fuzz Executable (AFL++ Link) ---
+$(FUZZ_APP): $(OBJ_DIR)/fuzz.o $(FUZZ_LIB) | dirs
+	@echo "[AFL++] Linking FUZZER $@"
+	@$(AFL_CC) $(AFL_CFLAGS) -o $@ $^ $(LDFLAGS) $(LINK_USER_SHARED_LIBS)
+
+# --- New Compile Rule for Instrumented Library Objects ---
+$(OBJ_DIR)/fuzz_%.o: $(SRC_DIR)/%.c | dirs
+	@mkdir -p $(dir $@)
+	@echo "[AFL++-FUZZ] $<"
+	@$(AFL_CC) $(AFL_CFLAGS) $(INC_FLAGS) -c $< -o $@
+
 # --- Test Executable ---
 test: static $(TEST_APP)
 $(TEST_APP): $(TEST_OBJS) $(LIB_DIR)/lib$(PROJECT_NAME).a | dirs
@@ -130,6 +155,10 @@ $(TEST_APP): $(TEST_OBJS) $(LIB_DIR)/lib$(PROJECT_NAME).a | dirs
 	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LINK_TEST_LIBS) $(LINK_USER_SHARED_LIBS)
 
 # --- Compile Rules ---
+$(OBJ_DIR)/fuzz.o: fuzz.c | dirs
+	@echo "[AFL++-TARGET] $<"
+	@$(AFL_CC) $(AFL_CFLAGS) $(INC_FLAGS) -c $< -o $@
+
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | dirs
 	@mkdir -p $(dir $@)
 	@echo "[CC] $<"
@@ -165,6 +194,15 @@ run_d: $(MAIN_APP_DYNAMIC)
 
 run_test: $(TEST_APP)
 	@$(TEST_APP)
+
+run_fuzz: $(FUZZ_APP)
+	@mkdir -p output_fuzz local_seed_corpus
+	@echo "Starting AFL++ Fuzzing. Use Ctrl+C to stop."
+	@afl-fuzz -i seed_corpus -o output_fuzz -- $(FUZZ_APP) @@
+
+run_docker_afl:
+	@echo "Start AFL++ in docker"
+	docker run -ti -v $(shell pwd):/src aflplusplus/aflplusplus
 
 # --- Clean Targets ---
 clean:

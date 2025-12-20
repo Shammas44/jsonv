@@ -1,16 +1,18 @@
 #include "validate.h"
 #include "assert.h"
+#include "mem.h"
 #include "data.h"
 #include "hint.h"
 #include "schema.h"
 #include "validate.handlers.h"
+#include <stdio.h>
 #include <string.h>
 
 static char *data_type[] = {"string", "number", "integer", "boolean",
                             "object", "array",  "null",    "unknown"};
 
 #define ERROR(format, ...)                                                     \
-  char *p = jsonv_build_data_path(data, json_data);                                 \
+  char *p = jsonv_build_data_path(data, json_data);                            \
   jsonv_path_reset(path);                                                      \
   JSONV_ENTER_FIELD(path, p);                                                  \
   JSONV_ERR(errors, path, format, __VA_ARGS__);                                \
@@ -79,7 +81,7 @@ int jsonv_validate(const char *json_schema, const Jsonv_SchemaNode *schema,
     // Check additional properties
     bool allow_more_props = schema->additional_properties;
     if (!allow_more_props && (data->property_count - required_present) > 0) {
-      ERROR("Additional properties are not allowed.", schema_key);
+      ERROR("Additional properties are not allowed.%s", "");
       valid = 0;
     }
 

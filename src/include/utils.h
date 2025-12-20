@@ -1,6 +1,6 @@
 #ifndef _JSONV_UTILS_H_INCLUDED
 #define _JSONV_UTILS_H_INCLUDED
-#include <sys/_types/_size_t.h>
+#include <stdio.h>
 
 #define JSON_INITIAL_BUFF_SIZE 4096
 /**

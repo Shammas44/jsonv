@@ -3,6 +3,10 @@
 #include "assert.h"
 #include "except.h"
 #define T Except
+
+const Except MALFORMED_JSON = { "Malformed JSON data" };
+const Except MAXIMUM_NESTED_DEPTH_REACHED = { "Maximum nested depth reached." };
+
 Except_Frame *Except_stack = NULL;
 void Except_raise(const T *e, const char *file,
 	int line) {

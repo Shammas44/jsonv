@@ -87,3 +87,105 @@ These keywords are used for defining, referencing, and reusing schemas.
 - [ ] `$comment`: For adding notes that implementations should ignore.
 - [ ] `$anchor`: Defines a local fragment identifier.
 - [ ] `$vocabulary`: Declares which vocabularies (sets of keywords) are used (Draft 2020-12).
+
+## Tokens
+
+# `{`
+- [ ] `{`
+- [x] `}`
+- [ ] `]`
+- [ ] `[`
+- [x] `[string]`
+- [ ] `[number]`
+- [ ] `true, false, null`
+- [ ] `:`
+- [ ] `,`
+
+# `}`
+- [ ] `{`
+- [x] `}` * si parent est un objet
+- [x] `]` * si parent est un tableau
+- [ ] `[`
+- [ ] `[string]`
+- [ ] `[number]`
+- [ ] `true, false, null`
+- [ ] `:`
+- [x] `,`
+- [x] `EOF`
+
+# `[`
+- [x] `{`
+- [ ] `}`
+- [x] `]`
+- [x] `[`
+- [x] `[string]`
+- [x] `[number]`
+- [x] `true, false, null`
+- [ ] `:`
+- [ ] `,`
+
+# `]`
+- [x] `{`
+- [x] `}`
+- [x] `]`
+- [x] `[`
+- [ ] `[string]`
+- [ ] `[number]`
+- [ ] `true, false, null`
+- [ ] `:`
+- [ ] `,`
+
+# `[string]`
+- [ ] `{`
+- [x] `}` * si parent est un objet
+- [x] `]` * si parent est un tableau
+- [ ] `[`
+- [ ] `[string]`
+- [ ] `[number]`
+- [ ] `true, false, null`
+- [x] `:` * si n-2 != ':'
+- [x] `,`
+
+# `[number]`
+- [ ] `{`
+- [x] `}`
+- [x] `]`
+- [ ] `[`
+- [ ] `[string]`
+- [ ] `[number]`
+- [ ] `true, false, null`
+- [ ] `:`
+- [x] `,`
+
+# `true ,false ,null`
+- [ ] `{`
+- [x] `}`
+- [x] `]`
+- [ ] `[`
+- [ ] `[string]`
+- [ ] `[number]`
+- [ ] `true, false, null`
+- [ ] `:`
+- [x] `,`
+
+# `:`
+- [x] `{`
+- [ ] `}`
+- [ ] `]`
+- [x] `[`
+- [x] `[string]`
+- [x] `[number]`
+- [x] `true, false, null`
+- [ ] `:`
+- [ ] `,`
+
+# `,`
+- [x] `{` * si parent est un tableau
+- [x] `}` * si l'élément ne clos par le parent
+- [x] `[` * si parent est un tableau
+- [x] `]` * si l'élément ne clos par le parent
+- [x] `[string]` * si parent est un tableau 
+- [x] `[number]` * si parent est un tableau
+- [x] `true` ,`false`, `null` * si parent est un tableau
+- [ ] `:`
+- [ ] `,`

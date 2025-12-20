@@ -3,9 +3,9 @@
 #include "hint.h"
 #include "list.h"
 #include "type.h"
-#include <jsmn/jsmn.h>
+#include "jsmn.h"
 #include <stdbool.h>
-#include <sys/_types/_size_t.h>
+#include <stdio.h>
 
 typedef int (*jsonv_Validate_Handler)(void *);
 
