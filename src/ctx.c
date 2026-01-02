@@ -1,4 +1,5 @@
 #include "ctx.h"
+#include "ast.h"
 #include "compile.h"
 #include "data.h"
 #include "error.h"
@@ -29,30 +30,24 @@ typedef struct Jsonv_Context {
   Jsonv_error_stack errors;
   Jsonv_path path;
   const Jsonv_SchemaNode *schema;
-  // const Jsonv_DataNode *data;
   const Jsonv_Node *data;
   size_t allowed_errors_count;
 } Jsonv_Context;
 
-static int tokenize(const char *json, jsmntok_t **tokens);
-
-static Jsonv_SchemaNode *parse_schema(const char *json, jsmntok_t **tok,
-                                      int tok_count, Jsonv_path *path,
-                                      Jsonv_error_stack *errors);
-// static Jsonv_DataNode *parse_data(const char *json, jsmntok_t **tok,
-//                                   int tok_count, Jsonv_path *path,
-//                                   Jsonv_error_stack *errors);
+// static Jsonv_SchemaNode *parse_schema(const char *json, jsmntok_t **tok,
+//                                       int tok_count, Jsonv_path *path,
+//                                       Jsonv_error_stack *errors);
 
 static Jsonv_Node *parse_node(Jsonv_Node_Container *root, const char *json,
-                              jsmntok_t **tok, int tok_count, Jsonv_path *path,
-                              Jsonv_error_stack *errors);
+                              Jsonv_path *path, Jsonv_error_stack *errors);
 
 void jsonv_ctx_print_data(Jsonv_Context *ctx, const char *json) {
   /*#region*/
   assert(ctx);
   assert(ctx->data);
   (void)(json);
-  jsonv_print_node_internal(ctx->data, 0, json);
+  Context c;
+  jsonv_print_node_internal((void **)&ctx->data, &c);
   /*#endregion*/
 }
 
@@ -70,41 +65,40 @@ int jsonv_ctx_prepare_schema(Jsonv_Context **ctx, const char *json,
   assert(ctx);
   assert(json);
   assert(tok);
-  if (*ctx == NULL) {
-    *ctx = CALLOC(1, sizeof(Jsonv_Context));
-  }
-  Jsonv_Context *c = *ctx;
-  Jsonv_error_stack *errors = &c->errors;
-  Jsonv_path *path = &c->path;
+  // if (*ctx == NULL) {
+  //   *ctx = CALLOC(1, sizeof(Jsonv_Context));
+  // }
+  // Jsonv_Context *c = *ctx;
+  // Jsonv_error_stack *errors = &c->errors;
+  // Jsonv_path *path = &c->path;
 
-  int tok_count = tokenize(json, tok);
-  if (tok_count < 1) {
-    ERR("Unable to tokenize json schema.");
-    return -1;
-  }
+  // int tok_count = tokenize(json, tok);
+  // if (tok_count < 1) {
+  //   ERR("Unable to tokenize json schema.");
+  //   return -1;
+  // }
 
-  Jsonv_SchemaNode *ast = parse_schema(json, tok, tok_count, path, errors);
+  // Jsonv_SchemaNode *ast = parse_schema(json, tok, tok_count, path, errors);
 
-  if (errors->count > 0) {
-    return -4;
-  }
+  // if (errors->count > 0) {
+  //   return -4;
+  // }
 
-  if (!ast) {
-    ERR("Unable to parse json schema.");
-    return -2;
-  }
+  // if (!ast) {
+  //   ERR("Unable to parse json schema.");
+  //   return -2;
+  // }
 
-  ctx[0]->schema = ast;
-  return tok_count;
+  // ctx[0]->schema = ast;
+  // return tok_count;
+  return 0;
   /*#endregion*/
 }
 
-int jsonv_ctx_prepare_data(Jsonv_Context **ctx, const char *json,
-                           jsmntok_t **tok) {
+int jsonv_ctx_prepare_data(Jsonv_Context **ctx, const char *json) {
   /*#region*/
   assert(ctx);
   assert(json);
-  assert(tok);
   if (*ctx == NULL) {
     *ctx = CALLOC(1, sizeof(Jsonv_Context));
   }
@@ -112,15 +106,9 @@ int jsonv_ctx_prepare_data(Jsonv_Context **ctx, const char *json,
   Jsonv_error_stack *errors = &c->errors;
   Jsonv_path *path = &c->path;
 
-  int tok_count = tokenize(json, tok);
-  if (tok_count < 1) {
-    ERR("Unable to tokenize json data.");
-    return tok_count;
-  }
-
   Jsonv_Node *ast;
   Jsonv_Node_Container *root = CALLOC(1, sizeof(Jsonv_Node_Container));
-  TRY { ast = parse_node(root, json, tok, tok_count, path, errors); }
+  TRY { ast = parse_node(root, json, path, errors); }
   EXCEPT(MALFORMED_JSON) { ERR("Malformed json."); }
   EXCEPT(MAXIMUM_NESTED_DEPTH_REACHED) { ERR("Maximum nested depth reached."); }
   END_TRY;
@@ -131,7 +119,7 @@ int jsonv_ctx_prepare_data(Jsonv_Context **ctx, const char *json,
   }
 
   ctx[0]->data = ast;
-  return tok_count;
+  return 1;
   /*#endregion*/
 }
 
@@ -170,80 +158,32 @@ void jsonv_ctx_free(Jsonv_Context *ctx) {
   /*#endregion*/
 }
 
-static int tokenize(const char *json, jsmntok_t **tokens) {
-  /*#region*/
-  assert(json);
-  assert(tokens);
-  jsmn_parser parser;
-  jsmn_init(&parser);
-
-  int required_tokens = jsmn_parse(&parser, json, strlen(json), NULL, 0);
-
-  *tokens = malloc(sizeof(jsmntok_t) * required_tokens);
-  if (!*tokens) {
-    return 0;
-  }
-
-  jsmn_init(&parser);
-  int token_num =
-      jsmn_parse(&parser, json, strlen(json), *tokens, required_tokens);
-
-  if (token_num < 1) {
-    free(*tokens);
-    *tokens = NULL;
-    return token_num;
-  }
-
-  return token_num;
-  /*#endregion*/
-}
-
-static Jsonv_SchemaNode *parse_schema(const char *json, jsmntok_t **tok,
-                                      int tok_count, Jsonv_path *path,
-                                      Jsonv_error_stack *errors) {
-  /*#region*/
-  jsonv_tokiterator *iterator = jsonv_tokiterator_new(json, tok, tok_count);
-  jsmntok_t *token = jsonv_tokiterator_current(iterator);
-  jsmntype_t type = token->type;
-  if (type != JSMN_OBJECT)
-    return NULL;
-  Jsonv_SchemaNode *schema =
-      jsonv_compile_schema(json, iterator, NULL, path, errors);
-  jsonv_tokiterator_free(&iterator);
-  return schema;
-  /*#endregion*/
-}
-
-// static Jsonv_DataNode *parse_data(const char *json, jsmntok_t **tok,
-//                                   int tok_count, Jsonv_path *path,
-//                                   Jsonv_error_stack *errors) {
+// static Jsonv_SchemaNode *parse_schema(const char *json, jsmntok_t **tok,
+//                                       int tok_count, Jsonv_path *path,
+//                                       Jsonv_error_stack *errors) {
 //   /*#region*/
 //   jsonv_tokiterator *iterator = jsonv_tokiterator_new(json, tok, tok_count);
 //   jsmntok_t *token = jsonv_tokiterator_current(iterator);
 //   jsmntype_t type = token->type;
 //   if (type != JSMN_OBJECT)
 //     return NULL;
-//   Jsonv_DataNode *data = jsonv_compile_data(json, iterator, NULL, path,
-//   errors); jsonv_tokiterator_free(&iterator); return data;
+//   Jsonv_SchemaNode *schema =
+//       jsonv_compile_schema(json, iterator, NULL, path, errors);
+//   jsonv_tokiterator_free(&iterator);
+//   return schema;
 //   /*#endregion*/
 // }
 
 static Jsonv_Node *parse_node(Jsonv_Node_Container *root, const char *json,
-                              jsmntok_t **tok, int tok_count, Jsonv_path *path,
-                              Jsonv_error_stack *errors) {
+                              Jsonv_path *path, Jsonv_error_stack *errors) {
   /*#region*/
-  jsonv_tokiterator *it = jsonv_tokiterator_new(json, tok, tok_count);
-  if (!it) {
-    RAISE(MALFORMED_JSON);
-  }
-  jsmntok_t *token = jsonv_tokiterator_current(it);
-  jsmntype_t type = token->type;
-  if (type != JSMN_OBJECT) {
-    RAISE(MALFORMED_JSON);
-  };
-  Jsonv_Node *data =
-      jsonv_compile_node(json, it, (Jsonv_Node *)root, path, errors, -1);
-  jsonv_tokiterator_free(&it);
-  return data;
+  Lexer *lexer = ALLOC(lexer_sizeof());
+  lexer_init(&lexer, json, strlen(json));
+  // Jsonv_Node *data =
+  //     jsonv_compile_node(json, lexer, (Jsonv_Node *)root, path, errors, -1);
+  jsonv_ast(json, lexer, (Jsonv_Node *)root, path, errors, -1);
+  lexer_free(&lexer);
+
+  return NULL;
   /*#endregion*/
 }

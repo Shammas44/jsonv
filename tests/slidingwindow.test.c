@@ -2,10 +2,10 @@
 #include <criterion/criterion.h>
 #include <stdbool.h>
 #define T Jsonv_SlidingWindow
-T w;
+static T w;
 
 // Setup function runs before every test
-void setup(void) { jsonv_sw_new(&w); }
+static void setup(void) { jsonv_sw_new(&w); }
 
 // Test 1: Ensure the window starts empty
 Test(T, init_state, .init = setup) {

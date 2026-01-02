@@ -6,7 +6,7 @@
 
 typedef struct Jsonv_Context Jsonv_Context;
 
-int jsonv_ctx_prepare_data(Jsonv_Context **ctx, const char *json_schema, jsmntok_t**tok);
+int jsonv_ctx_prepare_data(Jsonv_Context **ctx, const char *json_schema);
 int jsonv_ctx_prepare_schema(Jsonv_Context **ctx, const char *json_schema,jsmntok_t**tok );
 void jsonv_ctx_print_data(Jsonv_Context *ctx, const char*json);
 void jsonv_ctx_print_schema(Jsonv_Context *ctx, const char*json);

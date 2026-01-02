@@ -180,12 +180,13 @@ static void print_hint_node_internal(Jsonv_Boundary boundary, int max_len) {
   }
   /*#endregion*/
 }
-
-void jsonv_print_node_internal(const Jsonv_Node *node, int depth,
-                               const char *json) {
+void jsonv_print_node_internal(void **x, void *cl) {
   /*#region*/
-  assert(node);
-  assert(json);
+  assert(x);
+  assert(cl);
+  const Jsonv_Node *node = *x;
+  Context *c = cl;
+  int depth = c->depth;
   bool is_array_item = node->parent && node->parent->type == JSONV_NODE_T_ARRAY;
 
   // 1. Print indentation
@@ -198,39 +199,37 @@ void jsonv_print_node_internal(const Jsonv_Node *node, int depth,
     print_hint_node_internal(node->key, 40);
     printf(": ");
   } else if (node->type == JSONV_NODE_T_OBJECT &&
-             ((Jsonv_Node_Container *)node)->length == 0) {
+             (list_length(((Jsonv_Node_Container *)node)->items)) == 0) {
     print_hint_node_internal(node->key, 40);
     printf(": {}");
   } else if (node->type == JSONV_NODE_T_ARRAY &&
-             ((Jsonv_Node_Container *)node)->length == 0) {
+             ((((Jsonv_Node_Container *)node)->items)) == 0) {
     print_hint_node_internal(node->key, 40);
     printf(": []");
   } else if (node->parent && node->parent->type == JSONV_NODE_T_ROOT) {
     print_hint_node_internal(node->key, 40);
     printf(": ");
   }
+  Context ctx;
   // 3. Print the node's value or structural newline/recursion
   switch (node->type) {
   case JSONV_NODE_T_ROOT:
     printf("\n");
     Jsonv_Node_Container *c = (Jsonv_Node_Container *)node;
-    for (size_t i = 0; i < c->length; i++) {
-      jsonv_print_node_internal(c->items[i], depth + 1, json);
-    }
+    ctx = (Context){.depth = depth + 1};
+    list_map(c->items, jsonv_print_node_internal, &ctx);
     break;
   case JSONV_NODE_T_OBJECT:
     printf("(depth %zu)\n", ((Jsonv_Node_Container *)node)->depth);
     Jsonv_Node_Container *c1 = (Jsonv_Node_Container *)node;
-    for (size_t i = 0; i < c1->length; i++) {
-      jsonv_print_node_internal(c1->items[i], depth + 1, json);
-    }
+    ctx = (Context){.depth = depth + 1};
+    list_map(c1->items, jsonv_print_node_internal, &ctx);
     break;
   case JSONV_NODE_T_ARRAY:
     printf("(depth %zu)\n", ((Jsonv_Node_Container *)node)->depth);
     Jsonv_Node_Container *c2 = (Jsonv_Node_Container *)node;
-    for (size_t i = 0; i < c2->length; i++) {
-      jsonv_print_node_internal(c2->items[i], depth + 1, json);
-    }
+    ctx = (Context){.depth = depth + 1};
+    list_map(c2->items, jsonv_print_node_internal, &ctx);
     break;
 
   case JSONV_NODE_T_STRING:

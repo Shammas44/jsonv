@@ -16,197 +16,16 @@ static Token lex_literal(T *l, const char *token_start);
 static Token lex_number(T *l, const char *token_start);
 static Token inner_next(T *l);
 
-static bool is_parent_object(T *l);
-static bool is_parent_array(T *l);
-static bool is_element_not_closing_parent(T *l);
-static bool is_prev_prev_not_colon(T *l);
-
-typedef struct {
-  bool allow;
-  handler handler;
-} Case;
-
-// '{'
-static Case open_brace_case[] = {
-    {0, NULL},    // T_BRACE_OPEN
-    {true, NULL}, // T_BRACE_CLOSE
-    {0, NULL},    // T_BRACKET_OPEN
-    {0, NULL},    // T_BRACKET_CLOSE
-    {true, NULL}, // T_STRING
-    {0, NULL},    // T_NUMBER
-    {0, NULL},    // T_LITERAL
-    {0, NULL},    // T_COLON
-    {0, NULL},    // T_COMMA
-    {0, NULL},    // T_EOF
-};
-// '}'
-static Case close_brace_case[] = {
-    {0, NULL},                // T_BRACE_OPEN
-    {true, is_parent_object}, // T_BRACE_CLOSE
-    {true, is_parent_array},  // T_BRACKET_OPEN
-    {0, NULL},                // T_BRACKET_CLOSE
-    {0, NULL},                // T_STRING
-    {0, NULL},                // T_NUMBER
-    {0, NULL},                // T_LITERAL
-    {true, NULL},             // T_COLON
-    {true, NULL},             // T_COMMA
-    {true, NULL},             // T_EOF
-};
-// '['
-static Case open_bracket_case[] = {
-    {true, NULL}, // T_BRACE_OPEN
-    {0, NULL},    // T_BRACE_CLOSE
-    {true, NULL}, // T_BRACKET_OPEN
-    {true, NULL}, // T_BRACKET_CLOSE
-    {true, NULL}, // T_STRING
-    {true, NULL}, // T_NUMBER
-    {true, NULL}, // T_LITERAL
-    {0, NULL},    // T_COLON
-    {0, NULL},    // T_COMMA
-    {0, NULL},    // T_EOF
-};
-// ']'
-static Case close_bracket_case[] = {
-    {true, NULL}, // T_BRACE_OPEN
-    {true, NULL}, // T_BRACE_CLOSE
-    {true, NULL}, // T_BRACKET_OPEN
-    {true, NULL}, // T_BRACKET_CLOSE
-    {0, NULL},    // T_STRING
-    {0, NULL},    // T_NUMBER
-    {0, NULL},    // T_LITERAL
-    {0, NULL},    // T_COLON
-    {0, NULL},    // T_COMMA
-    {0, NULL},    // T_EOF
-};
-// 'string'
-static Case string_case[] = {
-    {0, NULL},                      // T_BRACE_OPEN
-    {true, is_parent_object},       // T_BRACE_CLOSE
-    {true, is_parent_array},        // T_BRACKET_OPEN
-    {0, NULL},                      // T_BRACKET_CLOSE
-    {0, NULL},                      // T_STRING
-    {0, NULL},                      // T_NUMBER
-    {0, NULL},                      // T_LITERAL
-    {true, is_prev_prev_not_colon}, // T_COLON
-    {true, NULL},                   // T_COMMA
-    {0, NULL},                      // T_EOF
-};
-// 'number'
-static Case number_case[] = {
-    {0, NULL},    // T_BRACE_OPEN
-    {true, NULL}, // T_BRACE_CLOSE
-    {true, NULL}, // T_BRACKET_OPEN
-    {0, NULL},    // T_BRACKET_CLOSE
-    {0, NULL},    // T_STRING
-    {0, NULL},    // T_NUMBER
-    {0, NULL},    // T_LITERAL
-    {0, NULL},    // T_COLON
-    {true, NULL}, // T_COMMA
-    {0, NULL},    // T_EOF
-};
-// 'literal'
-static Case literal_case[] = {
-    {0, NULL},    // T_BRACE_OPEN
-    {true, NULL}, // T_BRACE_CLOSE
-    {true, NULL}, // T_BRACKET_OPEN
-    {0, NULL},    // T_BRACKET_CLOSE
-    {0, NULL},    // T_STRING
-    {0, NULL},    // T_NUMBER
-    {0, NULL},    // T_LITERAL
-    {0, NULL},    // T_COLON
-    {true, NULL}, // T_COMMA
-    {0, NULL},    // T_EOF
-};
-// ':'
-static Case colon_case[] = {
-    {true, NULL}, // T_BRACE_OPEN
-    {0, NULL},    // T_BRACE_CLOSE
-    {0, NULL},    // T_BRACKET_OPEN
-    {true, NULL}, // T_BRACKET_CLOSE
-    {true, NULL}, // T_STRING
-    {true, NULL}, // T_NUMBER
-    {true, NULL}, // T_LITERAL
-    {0, NULL},    // T_COLON
-    {0, NULL},    // T_COMMA
-    {0, NULL},    // T_EOF
-};
-// ','
-static Case comma_case[] = {
-    {true, is_parent_array},               // T_BRACE_OPEN
-    {true, is_element_not_closing_parent}, // T_BRACE_CLOSE
-    {true, is_parent_array},               // T_BRACKET_OPEN
-    {true, is_element_not_closing_parent}, // T_BRACKET_CLOSE
-    {true, is_parent_array},               // T_STRING
-    {true, is_parent_array},               // T_NUMBER
-    {true, is_parent_array},               // T_LITERAL
-    {0, NULL},                             // T_COLON
-    {0, NULL},                             // T_COMMA
-    {0, NULL},                             // T_EOF
-};
-
-static Case *cases[] = {
-    open_brace_case,    // '{'
-    close_brace_case,   // '}'
-    open_bracket_case,  // '['
-    close_bracket_case, // ']'
-    string_case,        // 'string'
-    number_case,        // 'number'
-    literal_case,       // 'literal'
-    colon_case,         // ':'
-    comma_case,         // ','
-};
-
 typedef struct T {
   const char *source; // The entire JSON string input
   size_t source_len;
   size_t current_pos;
-  Jsonv_BitStack *stack;
+  // Jsonv_BitStack *stack;
   Jsonv_SlidingWindow *window;
-  Token previous_token;
 } T;
 
 #define BRACE 0
 #define BRACKET 1
-
-static bool is_parent_object(T *l) {
-  /*#region*/
-  int top = jsonv_bs_top(l->stack);
-  if (top == -1)
-    return false;
-  return top == BRACE;
-  /*#endregion*/
-}
-
-static bool is_parent_array(T *l) {
-  /*#region*/
-  int top = jsonv_bs_top(l->stack);
-  if (top == -1)
-    return false;
-  return top == BRACKET;
-  /*#endregion*/
-}
-
-static bool is_element_not_closing_parent(T *l) {
-  /*#region*/
-  Token current = jsonv_sw_get_by_order(l->window, 0);
-  TokenType type = current.type;
-  int top = jsonv_bs_top(l->stack);
-  if (top == -1)
-    return false;
-  if (top == BRACKET && type == T_BRACKET_CLOSE)
-    return false;
-  if (top == BRACE && type == T_BRACE_CLOSE)
-    return false;
-  return top == BRACKET;
-  /*#endregion*/
-}
-
-static bool is_prev_prev_not_colon(T *l) {
-  /*#region*/
-  Token prevprev = jsonv_sw_get_by_order(l->window, -2);
-  return prevprev.type != T_COLON;
-  /*#endregion*/
-}
 
 static void skip_whitespace(T *l) {
   /*#region*/
@@ -271,19 +90,19 @@ static Token lex_literal(T *l, const char *token_start) {
   if (token_start[0] == 't' && l->current_pos + 3 <= l->source_len &&
       strncmp(l->source + l->current_pos, "rue", 3) == 0) {
     l->current_pos += 3;
-    return (Token){T_LITERAL, token_start, 4}; // "true"
+    return (Token){T_TRUE, token_start, 4}; // "true"
   }
 
   if (token_start[0] == 'f' && l->current_pos + 4 <= l->source_len &&
       strncmp(l->source + l->current_pos, "alse", 4) == 0) {
     l->current_pos += 4;
-    return (Token){T_LITERAL, token_start, 5}; // "false"
+    return (Token){T_FALSE, token_start, 5}; // "false"
   }
 
   if (token_start[0] == 'n' && l->current_pos + 3 <= l->source_len &&
       strncmp(l->source + l->current_pos, "ull", 3) == 0) {
     l->current_pos += 3;
-    return (Token){T_LITERAL, token_start, 4}; // "null"
+    return (Token){T_NULL, token_start, 4}; // "null"
   }
 
   // If it started with t, f, or n but wasn't a recognized literal
@@ -324,6 +143,7 @@ static bool advance_if_match(Lexer *l, char expected) {
 }
 
 static Token lex_number(Lexer *l, const char *token_start) {
+  /*#region*/
   // We already consumed the first character (either '-', '0', or 1-9)
   // The current_pos now points to the second character (or later).
   size_t start_pos = l->current_pos - 1;
@@ -398,6 +218,7 @@ static Token lex_number(Lexer *l, const char *token_start) {
 
   // Successful termination of number token
   return (Token){T_NUMBER, token_start, l->current_pos - start_pos};
+  /*#endregion*/
 }
 
 static Token inner_next(T *l) {
@@ -466,9 +287,15 @@ void lexer_init(T **l, const char *source, size_t len) {
   self->source_len = len;
   self->current_pos = 0;
   self->window = ALLOC(sizeof(Jsonv_SlidingWindow));
-  self->stack = ALLOC(jsonv_bs_sizeof());
+  // self->stack = ALLOC(jsonv_bs_sizeof());
+  // jsonv_bs_init(self->stack);
   jsonv_sw_new(self->window);
-  jsonv_bs_init(self->stack);
+  /*#endregion*/
+}
+
+Token lexer_current_token(T *l) {
+  /*#region*/
+  return jsonv_sw_get_by_order(l->window, 0);
   /*#endregion*/
 }
 
@@ -481,32 +308,10 @@ Token lexer_next_token(T *l) {
   if (jsonv_sw_count(l->window) == 1) {
     if (type != T_BRACE_OPEN)
       return (Token){.type = T_ERROR};
-    jsonv_bs_push(l->stack, BRACE);
+    // jsonv_bs_push(l->stack, BRACE);
     return current;
   }
 
-  Token previous = jsonv_sw_get_by_order(l->window, -1);
-  Case k = cases[previous.type][type];
-  if (!k.allow)
-    return (Token){.type = T_ERROR};
-  if (k.handler && !k.handler(l))
-    return (Token){.type = T_ERROR};
-  switch (type) {
-  case T_BRACE_OPEN:
-    jsonv_bs_push(l->stack, BRACE);
-    break;
-  case T_BRACE_CLOSE:
-    jsonv_bs_pop(l->stack);
-    break;
-  case T_BRACKET_OPEN:
-    jsonv_bs_push(l->stack, BRACKET);
-    break;
-  case T_BRACKET_CLOSE:
-    jsonv_bs_pop(l->stack);
-    break;
-  default:
-    break;
-  }
   return current;
   /*#endregion*/
 }
@@ -521,7 +326,7 @@ void lexer_free(T **l) {
   /*#region*/
   T *lexer = *l;
   free(lexer->window);
-  free(lexer->stack);
+  // free(lexer->stack);
   free(lexer);
   l = NULL;
   /*#endregion*/

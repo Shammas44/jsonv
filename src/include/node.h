@@ -1,7 +1,9 @@
 #ifndef _JSONV_NODE_H_INCLUDED
 #define _JSONV_NODE_H_INCLUDED
 #include "error.h"
+#include "list.h"
 #include "token.h"
+#include "lexer.h"
 #include <stdbool.h>
 
 // counting start at 0
@@ -36,8 +38,7 @@ typedef struct Jsonv_Node_Container {
   int index;
   struct Jsonv_Node *parent;
   size_t depth;
-  size_t length;
-  Jsonv_Node **items;
+  List items;
 } Jsonv_Node_Container;
 
 typedef struct Jsonv_Node_String {
@@ -79,7 +80,7 @@ typedef struct Jsonv_Node_Unknown {
   struct Jsonv_Node *parent;
 } Jsonv_Node_Unknown;
 
-Jsonv_Node *jsonv_compile_node(const char *json, jsonv_tokiterator *it,
+Jsonv_Node *jsonv_compile_node(const char *json, Lexer *it,
                                Jsonv_Node *parent, Jsonv_path *path,
                                Jsonv_error_stack *errors, size_t index);
 

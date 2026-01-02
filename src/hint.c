@@ -1,5 +1,5 @@
 #include "hint.h"
-#include "jsmn.h"
+#include "token.h"
 #include <string.h>
 
 void hint_to_char(const char *json, jsonv_Hint hint, char *buff) {
@@ -10,10 +10,10 @@ void hint_to_char(const char *json, jsonv_Hint hint, char *buff) {
   /*#endregion*/
 }
 
-void jsmntok_to_char(const char *json, jsmntok_t tok, char *buff) {
+void tok_to_char(Token tok, char *buff) {
   /*#region*/
-  int len = tok.end - tok.start;
-  strncpy(buff, json + tok.start, len);
+  int len = tok.length;
+  strncpy(buff, tok.start, len);
   buff[len] = '\0';
   /*#endregion*/
 }

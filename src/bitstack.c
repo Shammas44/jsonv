@@ -21,7 +21,11 @@ int jsonv_bs_top(T *s) {
   /*#region*/
   if (jsonv_bs_is_empty(s))
     return -1;
-  return s->bytes[s->top];
+
+  int byteIdx = s->top / 8;
+  int bitIdx = s->top % 8;
+
+  return (s->bytes[byteIdx] >> bitIdx) & 1;
   /*#endregion*/
 }
 
