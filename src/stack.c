@@ -48,47 +48,43 @@ static bool stack_grow(T *s) {
   /*#endregion*/
 }
 
-bool stack_push(T *s, const void *elem) {
+void* stack_push(T *s, const void *elem) {
   /*#region*/
-  if (!s || !elem)
-    return false;
+  assert(s);
+  assert(elem);
 
   /* Grow if needed */
   if ((size_t)(s->top + 1) == s->capacity) {
     if (!stack_grow(s))
-      return false;
+      return NULL;
   }
 
   s->top++;
 
   memcpy(s->data + (s->top * s->elem_size), elem, s->elem_size);
 
-  return true;
+  return s->data + (s->top * s->elem_size);
   /*#endregion*/
 }
 
-bool stack_pop(T *s, void *out_elem) {
+void* stack_pop(T *s) {
   /*#region*/
-  if (!s || s->top < 0)
-    return false;
+  assert(s);
+  assert(s->top >= 0);
 
-  if (out_elem) {
-    memcpy(out_elem, s->data + (s->top * s->elem_size), s->elem_size);
-  }
+  void *p = s->data + (s->top * s->elem_size);
 
   s->top--;
-  return true;
+  return p;
   /*#endregion*/
 }
 
-bool stack_peek(const T *s, void *out_elem) {
+void *stack_peek(const T *s, size_t index) {
   /*#region*/
-  if (!s || s->top < 0 || !out_elem)
-    return false;
-
-  memcpy(out_elem, s->data + (s->top * s->elem_size), s->elem_size);
-
-  return true;
+  assert(s);
+  assert(s->top >= 0);
+  assert(index <= (size_t)s->top);
+  return s->data + (index * s->elem_size);
   /*#endregion*/
 }
 

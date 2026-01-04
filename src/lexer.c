@@ -1,31 +1,22 @@
 #include "lexer.h"
 #include "assert.h"
-#include "bitstack.h"
-#include "mem.h"
-#include "slidingwindow.h"
 #include "token.h"
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+
 #define T Lexer
 
-typedef bool (*handler)(T *l);
-
 static void skip_whitespace(T *l);
-static Token lex_string(T *l, const char *token_start);
-static Token lex_literal(T *l, const char *token_start);
-static Token lex_number(T *l, const char *token_start);
-static Token inner_next(T *l);
+static Token lex_string(T *l, const unsigned char *token_start);
+static Token lex_literal(T *l, const unsigned char *token_start);
+static Token lex_number(T *l, const unsigned char *token_start);
 
 typedef struct T {
-  const char *source; // The entire JSON string input
+  const unsigned char *source; // The entire JSON string input
   size_t source_len;
   size_t current_pos;
-  // Jsonv_BitStack *stack;
-  Jsonv_SlidingWindow *window;
 } T;
-
-#define BRACE 0
-#define BRACKET 1
 
 static void skip_whitespace(T *l) {
   /*#region*/
@@ -40,73 +31,103 @@ static void skip_whitespace(T *l) {
   /*#endregion*/
 }
 
-static Token lex_string(T *l, const char *token_start) {
+static int is_hex_digit(char c) {
+  /*#region*/
+  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+         (c >= 'A' && c <= 'F');
+  /*#endregion*/
+}
+
+static Token lex_string(Lexer *l, const unsigned char *token_start) {
   /*#region*/
   // We already consumed the opening '"'
   size_t start_pos = l->current_pos;
 
   while (l->current_pos < l->source_len) {
-    char c = l->source[l->current_pos];
+    // 1. Cast to unsigned char to handle UTF-8/Emojis correctly
+    unsigned char c = (unsigned char)l->source[l->current_pos];
 
     if (c == '"') {
       l->current_pos++; // Consume closing quote
-      return (Token){T_STRING, token_start + 1, l->current_pos - start_pos - 1};
+      return (Token){T_STRING, .string = {token_start + 1,
+                                          l->current_pos - start_pos - 1}};
     }
 
     if (c == '\\') {
-      // JSON supports escaped characters (\n, \t, \uXXXX, etc.)
       l->current_pos++; // Consume '\'
       if (l->current_pos < l->source_len) {
         char escaped_char = l->source[l->current_pos];
-        if (strchr("\"\\/bfnrtu", escaped_char) != NULL) {
-          l->current_pos++; // Consume the escaped character
+
+        // Handle standard escapes
+        if (strchr("\"\\/bfnrt", escaped_char) != NULL) {
+          l->current_pos++;
+          continue;
+        }
+
+        // 2. Handle Unicode escapes (\uXXXX)
+        // Emojis can be surrogate pairs (e.g. \uD83D\uDE00)
+        if (escaped_char == 'u') {
+          l->current_pos++; // Consume 'u'
+          // We expect 4 hex digits
+          for (int i = 0; i < 4; i++) {
+            if (l->current_pos < l->source_len &&
+                is_hex_digit(l->source[l->current_pos])) {
+              l->current_pos++;
+            } else {
+              return (Token){T_ERROR, .string = {token_start,
+                                                 l->current_pos - (token_start -
+                                                                   l->source)}};
+            }
+          }
           continue;
         }
       }
-      // Error: Invalid escape sequence
-      return (Token){T_ERROR, token_start,
-                     l->current_pos - (token_start - l->source)};
+
+      return (Token){
+          T_ERROR,
+          .string = {token_start, l->current_pos - (token_start - l->source)}};
     }
 
-    // Check for control characters (must be escaped)
+    // 3. Check for control characters using the unsigned value
+    // Emojis (e.g., 0xF0) are now > 32, so they pass this check.
     if (c < 32) {
-      return (Token){T_ERROR, token_start,
-                     l->current_pos - (token_start - l->source)};
+      return (Token){
+          T_ERROR,
+          .string = {token_start, l->current_pos - (token_start - l->source)}};
     }
 
     l->current_pos++;
   }
 
-  // Error: Unterminated string (reached EOF)
-  return (Token){T_ERROR, token_start,
-                 l->source_len - (token_start - l->source)};
+  return (Token){T_ERROR, .string = {token_start, l->source_len - (token_start -
+                                                                   l->source)}};
   /*#endregion*/
 }
 
-static Token lex_literal(T *l, const char *token_start) {
+static Token lex_literal(T *l, const unsigned char *token_start) {
   /*#region*/
   // We have already consumed the first char (t, f, or n)
 
   if (token_start[0] == 't' && l->current_pos + 3 <= l->source_len &&
-      strncmp(l->source + l->current_pos, "rue", 3) == 0) {
+      strncmp((char*)l->source + l->current_pos, "rue", 3) == 0) {
     l->current_pos += 3;
-    return (Token){T_TRUE, token_start, 4}; // "true"
+    return (Token){T_TRUE, {0}}; // "true"
   }
 
   if (token_start[0] == 'f' && l->current_pos + 4 <= l->source_len &&
-      strncmp(l->source + l->current_pos, "alse", 4) == 0) {
+      strncmp((char*)l->source + l->current_pos, "alse", 4) == 0) {
     l->current_pos += 4;
-    return (Token){T_FALSE, token_start, 5}; // "false"
+    return (Token){T_FALSE, {0}}; // "false"
   }
 
   if (token_start[0] == 'n' && l->current_pos + 3 <= l->source_len &&
-      strncmp(l->source + l->current_pos, "ull", 3) == 0) {
+      strncmp((char*)l->source + l->current_pos, "ull", 3) == 0) {
     l->current_pos += 3;
-    return (Token){T_NULL, token_start, 4}; // "null"
+    return (Token){T_NULL, {0}}; // "null"
   }
 
   // If it started with t, f, or n but wasn't a recognized literal
-  return (Token){T_ERROR, token_start, 1};
+  return (Token){T_ERROR, .string = {token_start, 1}};
   /*#endregion*/
 }
 
@@ -142,111 +163,116 @@ static bool advance_if_match(Lexer *l, char expected) {
   /*#endregion*/
 }
 
-static Token lex_number(Lexer *l, const char *token_start) {
-  /*#region*/
-  // We already consumed the first character (either '-', '0', or 1-9)
-  // The current_pos now points to the second character (or later).
+static Token lex_number(Lexer *l, const unsigned char *token_start) {
   size_t start_pos = l->current_pos - 1;
 
   // --- 1. Integer Part ---
-
-  // If the number started with a minus sign ('-'), the next character must be a
-  // digit.
   if (token_start[0] == '-') {
     if (!is_digit(l->source[l->current_pos])) {
-      // Error: '-' must be followed by a digit.
-      return (Token){T_ERROR, token_start, 1};
+      return (Token){T_ERROR, .string = {token_start, 1}};
     }
   }
 
-  // Check for leading zero, which must be followed by a decimal point or end of
-  // number.
   if (token_start[0] == '0' && l->current_pos < l->source_len) {
     if (is_digit(l->source[l->current_pos])) {
-      // Error: Leading zero not followed by a decimal point (e.g., 012)
-      return (Token){T_ERROR, token_start, 2};
+      return (Token){T_ERROR, .string = {token_start, 2}};
     }
   }
 
-  // Consume all subsequent digits of the integer part (if not a single '0')
   while (l->current_pos < l->source_len &&
          is_digit(l->source[l->current_pos])) {
     l->current_pos++;
   }
 
-  // --- 2. Fractional Part (Optional) ---
+  // --- 2. Fractional Part ---
   if (l->current_pos < l->source_len && l->source[l->current_pos] == '.') {
-    l->current_pos++; // Consume '.'
-
-    // Must be followed by at least one digit
+    l->current_pos++;
     if (l->current_pos >= l->source_len ||
         !is_digit(l->source[l->current_pos])) {
-      // Error: '.' must be followed by a digit (e.g., 1.)
-      return (Token){T_ERROR, token_start, l->current_pos - start_pos};
+      return (Token){T_ERROR,
+                     .string = {token_start, l->current_pos - start_pos}};
     }
-
-    // Consume all subsequent digits of the fractional part
     while (l->current_pos < l->source_len &&
            is_digit(l->source[l->current_pos])) {
       l->current_pos++;
     }
   }
 
-  // --- 3. Exponent Part (Optional) ---
+  // --- 3. Exponent Part ---
   char c = l->source[l->current_pos];
   if (c == 'e' || c == 'E') {
-    l->current_pos++; // Consume 'e' or 'E'
-
-    // Optional sign (+ or -)
+    l->current_pos++;
     if (advance_if_match(l, '+') || advance_if_match(l, '-')) {
-      // Sign consumed
     }
 
-    // Must be followed by at least one digit
     if (l->current_pos >= l->source_len ||
         !is_digit(l->source[l->current_pos])) {
-      // Error: 'e' must be followed by a sign or digit (e.g., 1e)
-      return (Token){T_ERROR, token_start, l->current_pos - start_pos};
+      return (Token){T_ERROR,
+                     .string = {token_start, l->current_pos - start_pos}};
     }
-
-    // Consume all subsequent digits of the exponent part
     while (l->current_pos < l->source_len &&
            is_digit(l->source[l->current_pos])) {
       l->current_pos++;
     }
   }
 
-  // Successful termination of number token
-  return (Token){T_NUMBER, token_start, l->current_pos - start_pos};
-  /*#endregion*/
+  // --- 4. Parse Value with Overflow Check ---
+  size_t length = l->current_pos - start_pos;
+  double value = 0.0;
+  char buffer[128];
+
+  if (length < sizeof(buffer)) {
+    memcpy(buffer, token_start, length);
+    buffer[length] = '\0';
+
+    char *endptr;
+    errno = 0; // Reset errno before calling strtod
+    value = strtod(buffer, &endptr);
+
+    // Check 1: Did parsing happen?
+    if (endptr == buffer) {
+      value = 0.0;
+    }
+    // Check 2: Overflow or Underflow?
+    else if (errno == ERANGE) {
+      // errno is set to ERANGE if the value is too large (infinity)
+      // or too small (underflow).
+      value = 0.0;
+    }
+  } else {
+    // Error: Number string too long for buffer
+    value = 0.0;
+  }
+
+  return (Token){T_NUMBER, .number = value};
 }
 
-static Token inner_next(T *l) {
+Token lexer_next_token(T *l) {
   /*#region*/
   skip_whitespace(l);
 
   if (l->current_pos >= l->source_len) {
-    return (Token){T_EOF, NULL, 0};
+    return (Token){T_EOF, {0}};
   }
 
-  const char *token_start = l->source + l->current_pos;
+  const unsigned char *token_start = l->source + l->current_pos;
   char c = *token_start;
   l->current_pos++; // Advance one character initially
 
   switch (c) {
   // Structural Tokens
   case '{':
-    return (Token){T_BRACE_OPEN, token_start, 1};
+    return (Token){T_BRACE_OPEN, .string = {token_start, 1}};
   case '}':
-    return (Token){T_BRACE_CLOSE, token_start, 1};
+    return (Token){T_BRACE_CLOSE, .string = {token_start, 1}};
   case '[':
-    return (Token){T_BRACKET_OPEN, token_start, 1};
+    return (Token){T_BRACKET_OPEN, .string = {token_start, 1}};
   case ']':
-    return (Token){T_BRACKET_CLOSE, token_start, 1};
+    return (Token){T_BRACKET_CLOSE, .string = {token_start, 1}};
   case ':':
-    return (Token){T_COLON, token_start, 1};
+    return (Token){T_COLON, .string = {token_start, 1}};
   case ',':
-    return (Token){T_COMMA, token_start, 1};
+    return (Token){T_COMMA, .string = {token_start, 1}};
 
   // Literal Tokens
   case '"':
@@ -272,12 +298,12 @@ static Token inner_next(T *l) {
     return lex_literal(l, token_start);
 
   default:
-    return (Token){T_ERROR, token_start, 1}; // Unexpected character
+    return (Token){T_ERROR, .string = {token_start, 1}}; // Unexpected character
   }
   /*#endregion*/
 }
 
-void lexer_init(T **l, const char *source, size_t len) {
+void lexer_init(T **l, const unsigned char *source, size_t len) {
   /*#region*/
   assert(*l);
   assert(source);
@@ -286,33 +312,6 @@ void lexer_init(T **l, const char *source, size_t len) {
   self->source = source;
   self->source_len = len;
   self->current_pos = 0;
-  self->window = ALLOC(sizeof(Jsonv_SlidingWindow));
-  // self->stack = ALLOC(jsonv_bs_sizeof());
-  // jsonv_bs_init(self->stack);
-  jsonv_sw_new(self->window);
-  /*#endregion*/
-}
-
-Token lexer_current_token(T *l) {
-  /*#region*/
-  return jsonv_sw_get_by_order(l->window, 0);
-  /*#endregion*/
-}
-
-Token lexer_next_token(T *l) {
-  /*#region*/
-  TokenType type;
-  Token current = inner_next(l);
-  jsonv_sw_push(l->window, current);
-  type = current.type;
-  if (jsonv_sw_count(l->window) == 1) {
-    if (type != T_BRACE_OPEN)
-      return (Token){.type = T_ERROR};
-    // jsonv_bs_push(l->stack, BRACE);
-    return current;
-  }
-
-  return current;
   /*#endregion*/
 }
 
@@ -325,8 +324,6 @@ size_t lexer_sizeof(void) {
 void lexer_free(T **l) {
   /*#region*/
   T *lexer = *l;
-  free(lexer->window);
-  // free(lexer->stack);
   free(lexer);
   l = NULL;
   /*#endregion*/

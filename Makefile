@@ -202,7 +202,8 @@ run_fuzz: $(FUZZ_APP)
 
 run_docker_afl:
 	@echo "Start AFL++ in docker"
-	docker run -ti -v $(shell pwd):/src aflplusplus/aflplusplus
+	docker build -t afl-jq .
+	docker run -ti -v $(shell pwd):/src afl-jq
 
 # --- Clean Targets ---
 clean:

@@ -18,9 +18,9 @@ void stack_init(T *s, size_t elem_size, unsigned char *data, size_t data_size);
 void stack_destroy(T *s);
 
 /* Operations */
-bool stack_push(T *s, const void *elem);
-bool stack_pop(T *s, void *out_elem);
-bool stack_peek(const T *s, void *out_elem);
+void* stack_push(T *s, const void *elem);
+void* stack_pop(T *s);
+void* stack_peek(const T *s, size_t index);
 
 /* State */
 bool stack_is_empty(const T *s);

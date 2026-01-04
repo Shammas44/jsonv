@@ -12,8 +12,8 @@ void hint_to_char(const char *json, jsonv_Hint hint, char *buff) {
 
 void tok_to_char(Token tok, char *buff) {
   /*#region*/
-  int len = tok.length;
-  strncpy(buff, tok.start, len);
+  int len = tok.string.length;
+  strncpy(buff, (char*)tok.string.start, len);
   buff[len] = '\0';
   /*#endregion*/
 }

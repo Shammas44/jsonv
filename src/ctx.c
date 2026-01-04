@@ -1,15 +1,9 @@
 #include "ctx.h"
 #include "ast.h"
-#include "compile.h"
-#include "data.h"
 #include "error.h"
-#include "jsmn.h"
 #include "mem.h"
-#include "node.h"
 #include "print.h"
 #include "schema.h"
-#include "token.h"
-#include "validate.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,24 +24,15 @@ typedef struct Jsonv_Context {
   Jsonv_error_stack errors;
   Jsonv_path path;
   const Jsonv_SchemaNode *schema;
-  const Jsonv_Node *data;
+  Stack data;
   size_t allowed_errors_count;
 } Jsonv_Context;
 
-// static Jsonv_SchemaNode *parse_schema(const char *json, jsmntok_t **tok,
-//                                       int tok_count, Jsonv_path *path,
-//                                       Jsonv_error_stack *errors);
-
-static Jsonv_Node *parse_node(Jsonv_Node_Container *root, const char *json,
-                              Jsonv_path *path, Jsonv_error_stack *errors);
-
-void jsonv_ctx_print_data(Jsonv_Context *ctx, const char *json) {
+void jsonv_ctx_print_data(Jsonv_Context *ctx) {
   /*#region*/
   assert(ctx);
-  assert(ctx->data);
-  (void)(json);
-  Context c;
-  jsonv_print_node_internal((void **)&ctx->data, &c);
+  assert(ctx->data.data);
+  print_ast(&ctx->data, ctx->data.top, 0);
   /*#endregion*/
 }
 
@@ -95,7 +80,8 @@ int jsonv_ctx_prepare_schema(Jsonv_Context **ctx, const char *json,
   /*#endregion*/
 }
 
-int jsonv_ctx_prepare_data(Jsonv_Context **ctx, const char *json) {
+bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json,
+                           Arena *arena) {
   /*#region*/
   assert(ctx);
   assert(json);
@@ -105,21 +91,38 @@ int jsonv_ctx_prepare_data(Jsonv_Context **ctx, const char *json) {
   Jsonv_Context *c = *ctx;
   Jsonv_error_stack *errors = &c->errors;
   Jsonv_path *path = &c->path;
+  size_t json_length = strlen((char*)json);
+  if(json_length==0) return false;
 
-  Jsonv_Node *ast;
-  Jsonv_Node_Container *root = CALLOC(1, sizeof(Jsonv_Node_Container));
-  TRY { ast = parse_node(root, json, path, errors); }
+  // 1. ALLOCATE SPACE FOR AST
+  size_t ast_storage_size = json_length * sizeof(ASTNode);
+  void *ast_storage = arena_alloc(arena, ast_storage_size);
+  stack_init(&c->data, sizeof(ASTNode), ast_storage, ast_storage_size);
+  // 2. ALLOCATE SPACE FOR CHILDREN
+  size_t children_storage_size = json_length * sizeof(int);
+  Stack children;
+  void *children_storage = arena_alloc(arena, children_storage_size);
+  stack_init(&children, sizeof(int), children_storage, children_storage_size);
+  // 3. ALLOCATE SPACE FOR CONTROL
+  size_t control_storage_size = json_length * sizeof(int);
+  Stack control;
+  void *control_storage = arena_alloc(arena, control_storage_size);
+  stack_init(&control, sizeof(int), control_storage, control_storage_size);
+  // 4. PREPARE LEXER
+  Lexer *lexer = ALLOC(lexer_sizeof());
+  lexer_init(&lexer, json, json_length);
+
+  bool out;
+  TRY {
+  out = jsonv_ast(lexer, &c->data, &control, &children);
+  }
   EXCEPT(MALFORMED_JSON) { ERR("Malformed json."); }
   EXCEPT(MAXIMUM_NESTED_DEPTH_REACHED) { ERR("Maximum nested depth reached."); }
   END_TRY;
 
-  if (errors->count > 0) {
-    jsonv_node_free((Jsonv_Node *)root);
-    return -4;
-  }
+  lexer_free(&lexer);
 
-  ctx[0]->data = ast;
-  return 1;
+  return out;
   /*#endregion*/
 }
 
@@ -128,7 +131,7 @@ int jsonv_ctx_validate(Jsonv_Context *ctx, const char *schema,
   /*#region*/
   assert(ctx);
   assert(ctx->schema);
-  assert(ctx->data);
+  assert(ctx->data.data);
   assert(schema);
   assert(data);
   // const Jsonv_SchemaNode *s = ctx->schema;
@@ -173,17 +176,3 @@ void jsonv_ctx_free(Jsonv_Context *ctx) {
 //   return schema;
 //   /*#endregion*/
 // }
-
-static Jsonv_Node *parse_node(Jsonv_Node_Container *root, const char *json,
-                              Jsonv_path *path, Jsonv_error_stack *errors) {
-  /*#region*/
-  Lexer *lexer = ALLOC(lexer_sizeof());
-  lexer_init(&lexer, json, strlen(json));
-  // Jsonv_Node *data =
-  //     jsonv_compile_node(json, lexer, (Jsonv_Node *)root, path, errors, -1);
-  jsonv_ast(json, lexer, (Jsonv_Node *)root, path, errors, -1);
-  lexer_free(&lexer);
-
-  return NULL;
-  /*#endregion*/
-}

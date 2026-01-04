@@ -61,13 +61,14 @@ Test(T, pop_returns_last_pushed_value, .fini = fini) {
   stack_push(&s, &a);
   stack_push(&s, &b);
 
-  int out = 0;
-  cr_assert(stack_pop(&s, &out));
-  cr_assert_eq(out, 2);
+  int *out = stack_pop(&s);
+  cr_assert_not_null(out);
+  cr_assert_eq(*out, 2);
   cr_assert_eq(s.top, 0);
 
-  cr_assert(stack_pop(&s, &out));
-  cr_assert_eq(out, 1);
+  out = stack_pop(&s);
+  cr_assert_not_null(out);
+  cr_assert_eq(*out, 1);
   cr_assert_eq(s.top, -1);
 
   cr_assert(stack_is_empty(&s));
@@ -78,8 +79,9 @@ Test(T, pop_on_empty_stack_fails, .fini = fini) {
   Stack s;
   stack_init(&s, sizeof(int), (unsigned char *)&data, sizeof(data));
 
-  int out;
-  cr_assert_not(stack_pop(&s, &out));
+  TRY { stack_pop(&s); }
+  ELSE { cr_assert(true); }
+  END_TRY;
   cr_assert_eq(s.top, -1);
 }
 
@@ -93,9 +95,10 @@ Test(T, peek_does_not_modify_top, .fini = fini) {
   int x = 99;
   stack_push(&s, &x);
 
-  int out = 0;
-  cr_assert(stack_peek(&s, &out));
-  cr_assert_eq(out, 99);
+  int *out = stack_peek(&s, s.top);
+
+  cr_assert_not_null(out);
+  cr_assert_eq(*out, 99);
   cr_assert_eq(s.top, 0);
 }
 
@@ -112,14 +115,13 @@ Test(T, stores_and_retrieves_structs, .fini = fini) {
   stack_push(&s, &a);
   stack_push(&s, &b);
 
-  TestStruct out;
-  stack_pop(&s, &out);
-  cr_assert_eq(out.id, 2);
-  cr_assert_float_eq(out.value, 2.71, 1e-9);
+  TestStruct *out = stack_pop(&s);
+  cr_assert_eq(out->id, 2);
+  cr_assert_float_eq(out->value, 2.71, 1e-9);
 
-  stack_pop(&s, &out);
-  cr_assert_eq(out.id, 1);
-  cr_assert_float_eq(out.value, 3.14, 1e-9);
+  out = stack_pop(&s);
+  cr_assert_eq(out->id, 1);
+  cr_assert_float_eq(out->value, 3.14, 1e-9);
 }
 
 /* ---------- Growth ---------- */
@@ -137,10 +139,9 @@ Test(T, stack_grows_beyond_initial_capacity, .fini = fini) {
   cr_assert_eq(stack_size(&s), count);
   cr_assert_eq(s.top, (int)count - 1);
 
-  int out;
   for (int i = count - 1; i >= 0; i--) {
-    stack_pop(&s, &out);
-    cr_assert_eq(out, i);
+    int *out = stack_pop(&s);
+    cr_assert_eq(*out, i);
   }
 
   cr_assert(stack_is_empty(&s));
@@ -152,16 +153,24 @@ Test(T, null_arguments_fail_cleanly, .fini = fini) {
   int data[10] = {0};
   Stack s;
   TRY { stack_init(&s, sizeof(int), (unsigned char *)&data, sizeof(data)); }
-  ELSE {
-    // expect to be called
-    cr_assert(true);
-  }
+  ELSE { cr_assert(true); }
   END_TRY;
 
   int x = 1;
-  cr_assert_not(stack_push(NULL, &x));
-  cr_assert_not(stack_push(&s, NULL));
 
-  cr_assert_not(stack_pop(NULL, &x));
-  cr_assert_not(stack_peek(NULL, &x));
+  TRY { stack_push(NULL, &x); }
+  ELSE { cr_assert(true); }
+  END_TRY;
+
+  TRY { stack_push(&s, NULL); }
+  ELSE { cr_assert(true); }
+  END_TRY;
+
+  TRY { stack_pop(NULL); }
+  ELSE { cr_assert(true); }
+  END_TRY;
+
+  TRY { stack_peek(NULL, x); }
+  ELSE { cr_assert(true); }
+  END_TRY;
 }

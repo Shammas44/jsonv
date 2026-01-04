@@ -1,12 +1,28 @@
 #ifndef _JSONV_AST_H_INCLUDED
 #define _JSONV_AST_H_INCLUDED
-#include "error.h"
-#include "node.h"
+#include "lexer.h"
+#include "stack.h"
 
-void jsonv_ast(const char *json, Lexer *it, Jsonv_Node *parent,
-               Jsonv_path *path, Jsonv_error_stack *errors, size_t index);
+typedef enum {
+  AST_LEAF,
+  AST_OBJECT,
+  AST_ARRAY,
+  AST_STRING,
+  AST_NUMBER,
+  AST_TRUE,
+  AST_FALSE,
+  AST_NULL,
+} ASTNodeType;
 
-bool validate_json(Lexer*lexer);
+typedef struct {
+  ASTNodeType type;
+  int first_child;  // Index in the nodes array
+  int next_sibling; // Index of the next item in the same object/array
+  Token token;      // To store the actual value (string, number, etc.)
+} ASTNode;
+
+bool jsonv_ast(Lexer *it, Stack *ast, Stack *control, Stack *children);
+void print_ast(Stack *ast, int ast_idx, int indent);
 void print_token(TokenType type);
-void print_ast(int node_idx, int depth);
+
 #endif
