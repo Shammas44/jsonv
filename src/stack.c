@@ -54,6 +54,7 @@ void* stack_push(T *s, const void *elem) {
   assert(elem);
 
   /* Grow if needed */
+  //TODO should it not be >= ?
   if ((size_t)(s->top + 1) == s->capacity) {
     if (!stack_grow(s))
       return NULL;

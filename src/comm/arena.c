@@ -1,14 +1,17 @@
 #include "arena.h"
+#include "mem.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+extern const Except ARENA_LIMIT_REACHED;
 
 static size_t align_up(size_t size) {
   return (size + (ARENA_ALIGNMENT - 1)) & ~(ARENA_ALIGNMENT - 1);
 }
 
 static ArenaBlock *arena_create_block(size_t capacity) {
-  ArenaBlock *block = (ArenaBlock *)malloc(sizeof(ArenaBlock) + capacity);
+  ArenaBlock *block = ALLOC(sizeof(ArenaBlock) + capacity);
   if (block) {
     block->next = NULL;
     block->capacity = capacity;
@@ -19,7 +22,7 @@ static ArenaBlock *arena_create_block(size_t capacity) {
 
 Arena *arena_create(size_t default_block_size, size_t max_limit,
                     size_t shrink_at) {
-  Arena *arena = (Arena *)malloc(sizeof(Arena));
+  Arena *arena = ALLOC(sizeof(Arena));
   if (!arena)
     return NULL;
 
@@ -65,6 +68,7 @@ void *arena_alloc(Arena *arena, size_t size) {
 
   // 3. Security Check
   if (arena->total_reserved + block_struct_size > arena->max_limit) {
+    RAISE(ARENA_LIMIT_REACHED);
     return NULL;
   }
 

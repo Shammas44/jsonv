@@ -1,235 +1,422 @@
 #include "schema.h"
 #include "assert.h"
-#include "compile.h"
-#include "hint.h"
-#include "mem.h"
-#include "schema.handlers.h"
+#include "ast.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
-extern Schema_Handler g_handlers[];
-extern size_t g_handlers_length;
+// --- UTILS ---
 
-Jsonv_SchemaNode *jsonv_compile_schema(const char *json, jsonv_tokiterator *it,
-                                       Jsonv_SchemaNode *parent,
-                                       Jsonv_path *path,
-                                       Jsonv_error_stack *errors){
+static double get_json_double(ASTNode *json_pool, int node_idx) {
   /*#region*/
-  (void)(json);
-  (void)(it);
-  (void)(parent);
-  (void)(path);
-  (void)(errors);
-  return NULL;
-  // (void)(parent);
-  // int token_index = jsonv_tokiterator_index(it);
-  // jsmntok_t *current_token = jsonv_tokiterator_current(it);
-
-  // if (token_index < 0 || current_token->type != JSMN_OBJECT) {
-  //   return NULL;
-  // }
-
-  // Jsonv_SchemaNode *node = CALLOC(1, sizeof(Jsonv_SchemaNode));
-
-  // // Initialize defaults
-  // node->type = jsonv_UNKNOWN;
-  // node->additional_properties = false;
-  // node->parent = parent;
-  // char bff[100] = {0};
-  // if(parent != NULL){
-  // jsmntok_t *key_token = jsonv_tokiterator_relative(it, -1);
-  // TOK(json, *key_token, bff);
-  // }
-
-  // // --- Pass 1: Parse All Keywords and Recursively Compile Sub-Schemas ---
-  // for (int i = 0; i < current_token->size; i++) {
-  //   // 1. IDENTIFY KEY and VALUE TOKENS
-  //   jsmntok_t *key_token = jsonv_tokiterator_next(it);
-  //   jsmntok_t *value_token = jsonv_tokiterator_next(it);
-
-  //   // 2. ISOLATE THE JUMP: Calculate the index of the next KEY token.
-  //   char key[100] = {0};
-  //   TOK(json, *key_token, key);
-
-  //   jsonv_Schema_Context ctx = {.schema = node,
-  //                               .value = value_token,
-  //                               .key = key_token,
-  //                               .json = json,
-  //                               .it = it,.path=path,.errors=errors
-  //   };
-
-  //   for (unsigned long j = 0; j < g_handlers_length; j++) {
-  //     if (strcmp(key, g_handlers[j].key) == 0) {
-  //       int e = g_handlers[j].handler(&ctx);
-  //       (void)(e);
-  //       //TODO change this
-  //       // assert(!e);
-  //       // break;
-  //     }
-  //   }
-  // }
-
-  // // --- Pass 2: Merge Required Flags into Properties (Unchanged but validated)
-  // char **required_keys = node->required_keys;
-  // size_t required_count = node->required_keys_length;
-  // if (node->properties && required_keys) {
-  //   for (size_t k = 0; k < required_count; k++) {
-  //     for (size_t p = 0; p < node->property_count; p++) {
-  //       // TODO improve this
-  //       if (required_keys[k] != NULL && node->properties[p].key.start != 0) {
-  //         int len = node->properties[p].key.end - node->properties[p].key.start;
-  //         if (strncmp(required_keys[k], json + node->properties[p].key.start,
-  //                     len) == 0) {
-  //           node->properties[p].required = true;
-  //           break;
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
-
-  // // Clean up temporary required keys array
-  // if (required_keys) {
-  //   free(required_keys);
-  // }
-  // return node;
+  if (node_idx == -1)
+    return 0.0;
+  return json_pool[node_idx].token.number;
   /*#endregion*/
 }
 
-void jsonv_schema_free(Jsonv_SchemaNode *node) {
+static Token get_json_token(ASTNode *json_pool, int node_idx) {
   /*#region*/
-  assert(node);
-  // handle objects
-  if (node->properties) {
-    for (size_t i = 0; i < node->property_count; i++) {
-      int count = node->properties[i].property_count;
-      for (int j = 0; j < count; j++) {
-        if (node->properties[j].properties)
-          jsonv_schema_free(node->properties[j].properties);
+  if (node_idx == -1)
+    return (Token){0};
+  return json_pool[node_idx].token;
+  /*#endregion*/
+}
+
+// Wrapper for AST property finder
+// Assumes jsonv_find_property handles quote unwrapping internally
+extern int jsonv_find_property(ASTNode *pool, int idx, const char *key);
+
+// --- CONSTRAINT LOGIC ---
+
+typedef void (*ConstraintSetter)(SchemaNode *node, int idx, ASTNode *json_pool,
+                                 int val_idx);
+
+static void set_number_constraint(SchemaNode *n, int i, ASTNode *pool,
+                                  int idx) {
+  /*#region*/
+  n->constraints[i].type = T_NUMBER;
+  n->constraints[i].value.number = get_json_double(pool, idx);
+  /*#endregion*/
+}
+
+static void set_string_constraint(SchemaNode *n, int i, ASTNode *pool,
+                                  int idx) {
+  /*#region*/
+  n->constraints[i].type = T_STRING;
+  Token t = get_json_token(pool, idx);
+  n->constraints[i].value.string.start = t.string.start;
+  n->constraints[i].value.string.length = t.string.length;
+  /*#endregion*/
+}
+
+static void set_boolean_constraint(SchemaNode *n, int i, ASTNode *pool,
+                                   int idx) {
+  /*#region*/
+  n->constraints[i].type = pool[idx].token.type;
+  /*#endregion*/
+}
+
+typedef struct {
+  const char *key;
+  ConstraintSetter setter;
+} ConstraintDef;
+
+static ConstraintDef kConstraints[] = {
+    // Numeric
+    {"minLength", set_number_constraint},
+    {"maxLength", set_number_constraint},
+    {"minimum", set_number_constraint},
+    {"maximum", set_number_constraint},
+    {"exclusiveMinimum", set_number_constraint},
+    {"exclusiveMaximum", set_number_constraint},
+    {"multipleOf", set_number_constraint},
+    {"minItems", set_number_constraint},
+    {"maxItems", set_number_constraint},
+    {"minProperties", set_number_constraint},
+    {"maxProperties", set_number_constraint},
+
+    // String
+    {"pattern", set_string_constraint},
+    {"format", set_string_constraint},
+
+    // Boolean (Centralized!)
+    {"additionalProperties", set_boolean_constraint},
+    {"uniqueItems", set_boolean_constraint},
+};
+#define NUM_CONSTRAINTS (sizeof(kConstraints) / sizeof(kConstraints[0]))
+
+static void extract_constraints(ASTNode *json_pool, int json_idx,
+                                SchemaNode *schema) {
+  /*#region*/
+  for (size_t i = 0; i < NUM_CONSTRAINTS; i++) {
+    int val_idx = jsonv_find_property(json_pool, json_idx, kConstraints[i].key);
+
+    if (val_idx != -1 && schema->constraints_count < MAX_SCHEMA_CONTRAINTS) {
+      int c_idx = schema->constraints_count++;
+
+      size_t key_len = strlen(kConstraints[i].key);
+      schema->constraints[c_idx].name.start =
+          (const unsigned char *)kConstraints[i].key;
+      schema->constraints[c_idx].name.length = key_len;
+
+      kConstraints[i].setter(schema, c_idx, json_pool, val_idx);
+    }
+  }
+  /*#endregion*/
+}
+
+// --- PARSER HELPERS ---
+
+static int new_schema_node(Stack *out, SchemaType type) {
+  /*#region*/
+  SchemaNode node;
+  memset(&node, 0, sizeof(SchemaNode));
+  node.type = type;
+  node.first_child = -1;
+  node.props_head = -1;
+  node.required_head = -1;
+  node.items_head = -1;
+  node.next_sibling = -1;
+
+  stack_push(out, &node);
+  return out->top;
+  /*#endregion*/
+}
+
+static SchemaType parse_type_string(Token t) {
+  /*#region*/
+  if (strncmp((char *)t.string.start, "object", t.string.length) == 0)
+    return SC_OBJECT;
+  if (strncmp((char *)t.string.start, "array", t.string.length) == 0)
+    return SC_ARRAY;
+  if (strncmp((char *)t.string.start, "string", t.string.length) == 0)
+    return SC_STRING;
+  if (strncmp((char *)t.string.start, "number", t.string.length) == 0)
+    return SC_NUMBER;
+  if (strncmp((char *)t.string.start, "integer", t.string.length) == 0)
+    return SC_NUMBER;
+  if (strncmp((char *)t.string.start, "boolean", t.string.length) == 0)
+    return SC_BOOLEAN;
+  if (strncmp((char *)t.string.start, "null", t.string.length) == 0)
+    return SC_NULL;
+  return SC_ANY;
+  /*#endregion*/
+}
+
+static SchemaType determine_type(ASTNode *json_pool, int json_idx) {
+  /*#region*/
+  ASTNode *node = &json_pool[json_idx];
+
+  // Handle Boolean Schemas (e.g. "additionalProperties": false)
+  if (node->type == AST_LEAF) {
+    if (node->token.type == T_FALSE)
+      return SC_FALSE;
+    return SC_ANY;
+  }
+
+  // Explicit type definition
+  int type_idx = jsonv_find_property(json_pool, json_idx, "type");
+  if (type_idx != -1) {
+    return parse_type_string(json_pool[type_idx].token);
+  }
+
+  // Inference
+  if (jsonv_find_property(json_pool, json_idx, "properties") != -1)
+    return SC_OBJECT;
+  if (jsonv_find_property(json_pool, json_idx, "items") != -1)
+    return SC_ARRAY;
+
+  return SC_ANY;
+  /*#endregion*/
+}
+
+// --- STACK SCHEDULERS ---
+
+static void schedule_properties(Stack *controls, ASTNode *json_pool,
+                                int json_props_idx, int schema_idx) {
+  /*#region*/
+  if (json_props_idx == -1 || json_pool[json_props_idx].type != AST_OBJECT)
+    return;
+
+  int count = 0;
+  int curr = json_pool[json_props_idx].first_child;
+  while (curr != -1) {
+    count++;
+    int val = json_pool[curr].next_sibling;
+    curr = json_pool[val].next_sibling;
+  }
+
+  SchemaControl conn = {
+      .cmd = SC_CMD_CONNECT_PROPS, .schema_idx = schema_idx, .count = count};
+  stack_push(controls, &conn);
+
+  curr = json_pool[json_props_idx].first_child;
+  while (curr != -1) {
+    int val_idx = json_pool[curr].next_sibling;
+    SchemaControl task = {.cmd = SC_CMD_BUILD_NODE,
+                          .json_idx = val_idx,
+                          .name_override = json_pool[curr].token};
+    stack_push(controls, &task);
+    curr = json_pool[val_idx].next_sibling;
+  }
+  /*#endregion*/
+}
+
+static void schedule_required(Stack *controls, ASTNode *json_pool,
+                              int json_req_idx, int schema_idx) {
+  /*#region*/
+
+  if (json_req_idx == -1 || json_pool[json_req_idx].type != AST_ARRAY)
+    return;
+
+  int count = 0;
+  int curr = json_pool[json_req_idx].first_child;
+  while (curr != -1) {
+    count++;
+    curr = json_pool[curr].next_sibling;
+  }
+
+  SchemaControl conn = {
+      .cmd = SC_CMD_CONNECT_REQUIRED, .schema_idx = schema_idx, .count = count};
+  stack_push(controls, &conn);
+
+  curr = json_pool[json_req_idx].first_child;
+  while (curr != -1) {
+    SchemaControl task = {.cmd = SC_CMD_BUILD_REQUIRED_NODE, .json_idx = curr};
+    stack_push(controls, &task);
+    curr = json_pool[curr].next_sibling;
+  }
+  /*#endregion*/
+}
+
+// --- CORE PARSER ---
+
+int parse_schema_stack(Stack *json, int json_root, Stack *schema,
+                       Stack *controls, Stack *results) {
+  /*#region*/
+  SchemaControl start = {.cmd = SC_CMD_BUILD_NODE, .json_idx = json_root};
+  stack_push(controls, &start);
+
+  while (controls->top >= 0) {
+    SchemaControl frame = *(SchemaControl *)stack_pop(controls);
+    ASTNode *json_pool = (ASTNode *)json->data;
+
+    switch (frame.cmd) {
+
+    case SC_CMD_BUILD_NODE: {
+      if (frame.json_idx == -1)
+        break;
+
+      // 1. Create Node
+      SchemaType type = determine_type(json_pool, frame.json_idx);
+      int sc_idx = new_schema_node(schema, type);
+      SCH_NODE_FROM_STACK(schema, sc_idx)->name = frame.name_override;
+
+      // 2. Extract Centralized Constraints
+      extract_constraints(json_pool, frame.json_idx,
+                          SCH_NODE_FROM_STACK(schema, sc_idx));
+
+      // 3. Schedule Return (Executes LAST)
+      SchemaControl ret = {.cmd = SC_CMD_RETURN, .schema_idx = sc_idx};
+      stack_push(controls, &ret);
+
+      // 4. Schedule Structural Children (Executes FIRST)
+      if (type == SC_OBJECT) {
+        // Properties
+        int props_idx =
+            jsonv_find_property(json_pool, frame.json_idx, "properties");
+        schedule_properties(controls, json_pool, props_idx, sc_idx);
+
+        // Required
+        int req_idx =
+            jsonv_find_property(json_pool, frame.json_idx, "required");
+        schedule_required(controls, json_pool, req_idx, sc_idx);
+
+        // Additional Properties (as a Schema)
+        int add_idx = jsonv_find_property(json_pool, frame.json_idx,
+                                          "additionalProperties");
+        if (add_idx != -1) {
+          SchemaControl conn = {.cmd = SC_CMD_CONNECT_ADDITIONAL,
+                                .schema_idx = sc_idx};
+          stack_push(controls, &conn);
+          SchemaControl build = {.cmd = SC_CMD_BUILD_NODE, .json_idx = add_idx};
+          stack_push(controls, &build);
+        }
+      } else if (type == SC_ARRAY) {
+        // Items
+        int items_idx = jsonv_find_property(json_pool, frame.json_idx, "items");
+        if (items_idx != -1) {
+          SchemaControl conn = {.cmd = SC_CMD_CONNECT_ITEMS,
+                                .schema_idx = sc_idx};
+          stack_push(controls, &conn);
+          SchemaControl build = {.cmd = SC_CMD_BUILD_NODE,
+                                 .json_idx = items_idx};
+          stack_push(controls, &build);
+        }
       }
+      break;
     }
-    free(node->properties);
+
+    case SC_CMD_BUILD_REQUIRED_NODE: {
+      int idx = new_schema_node(schema, SC_REQUIRED_FIELD);
+      SCH_NODE_FROM_STACK(schema, idx)->name = json_pool[frame.json_idx].token;
+      stack_push(results, &idx);
+      break;
+    }
+
+      // --- LINKING COMMANDS ---
+
+    case SC_CMD_CONNECT_PROPS: {
+      int head = -1, prev = -1;
+      for (int i = 0; i < frame.count; i++) {
+        int child = *(int *)stack_pop(results);
+        if (head == -1)
+          head = child;
+        else
+          SCH_NODE_FROM_STACK(schema, prev)->next_sibling = child;
+        prev = child;
+      }
+      SCH_NODE_FROM_STACK(schema, frame.schema_idx)->props_head = head;
+      break;
+    }
+
+    case SC_CMD_CONNECT_REQUIRED: {
+      int head = -1, prev = -1;
+      for (int i = 0; i < frame.count; i++) {
+        int child = *(int *)stack_pop(results);
+        if (head == -1)
+          head = child;
+        else
+          SCH_NODE_FROM_STACK(schema, prev)->next_sibling = child;
+        prev = child;
+      }
+      SCH_NODE_FROM_STACK(schema, frame.schema_idx)->required_head = head;
+      break;
+    }
+
+    case SC_CMD_CONNECT_ITEMS: {
+      int child = *(int *)stack_pop(results);
+      SCH_NODE_FROM_STACK(schema, frame.schema_idx)->items_head = child;
+      break;
+    }
+
+    case SC_CMD_CONNECT_ADDITIONAL: {
+      int child = *(int *)stack_pop(results);
+      SCH_NODE_FROM_STACK(schema, frame.schema_idx)->additional_schema = child;
+      break;
+    }
+
+    case SC_CMD_RETURN: {
+      stack_push(results, &frame.schema_idx);
+      break;
+    }
+    }
   }
-  // handle array
-  if (node->items)
-    jsonv_schema_free(node->items);
-  free(node);
+
+  return (results->top >= 0) ? *(int *)stack_pop(results) : -1;
   /*#endregion*/
 }
 
-/*
- * Build JSON path for a node:
- *   object members → ".key"
- *   array members  → "[index]"
- *
- * Returned string must be free()'d by the caller.
- */
-char *jsonv_build_schema_path(const Jsonv_SchemaNode *node, const char *json) {
-  if (!node)
-    return strdup("$");
+void print_schema(Stack *out, int sc_idx, int indent) {
+  /*#region*/
+  if (sc_idx == -1)
+    return;
+  SchemaNode *node = SCH_NODE_FROM_STACK(out, sc_idx);
 
-  char **segments = NULL;
-  size_t seg_count = 0;
+  for (int i = 0; i < indent; i++)
+    printf("  ");
 
-  const Jsonv_SchemaNode *cur = node;
+  if (node->name.string.length > 0)
+    printf("Property '%.*s': ", (int)node->name.string.length,
+           node->name.string.start);
+  else
+    printf("Schema: ");
 
-  // Traverse from the current node (cur) up to the root (parent == NULL)
-  while (cur->parent != NULL) {
-    const Jsonv_SchemaNode *parent = cur->parent;
-    char buffer[256];
-    char *segment_value = NULL; 
+  const char *type_names[] = {"ANY",  "FALSE",  "STRING", "NUMBER", "BOOL",
+                              "NULL", "OBJECT", "ARRAY",  "REQ"};
+  printf("%s", type_names[node->type]);
 
-    // Find the relationship of 'cur' to 'parent'
-    
-    // 1. If 'cur' is the single 'items' schema for a list validation.
-    // This is typically not represented as an index in the path, but let's handle it.
-    if (parent->type == jsonv_ARRAY && parent->items == cur) {
-        // Path should typically represent the element index [N] or [*] if general
-        // Since we don't know the instance index, we use a placeholder or assume [0]
-        segment_value = strdup("[?]");
-    } 
-    // 2. If 'cur' is one of the schemas in parent->properties (used for both object properties and tuple array items)
-    else {
-        // Search through parent->properties to identify 'cur' and determine the segment format
-        bool found = false;
-        
-        for (size_t i = 0; i < parent->property_count; ++i) {
-            if (&parent->properties[i] == cur) {
-                found = true;
-                
-                if (parent->type == jsonv_OBJECT) {
-                    // Object Property: use the key from 'cur' and format as .key
-                    // Note: cur->key is the property name in the schema
-                    int len = cur->key.end - cur->key.start;
-                    if (len > 0) {
-                        char *key_str = malloc(len + 1); 
-                        strncpy(key_str, json + cur->key.start, len);
-                        key_str[len] = '\0';
-                        
-                        // Format: .key (e.g., .product)
-                        snprintf(buffer, sizeof(buffer), ".%s", key_str);
-                        free(key_str);
-                        segment_value = strdup(buffer);
-                    } else {
-                        segment_value = strdup(".?");
-                    }
-                } else if (parent->type == jsonv_ARRAY) {
-                    // Array Item (Tuple): use the index 'i' and format as [index]
-                    // Format: [index] (e.g., [2])
-                    snprintf(buffer, sizeof(buffer), "[%zu]", i);
-                    segment_value = strdup(buffer);
-                }
-                
-                break;
-            }
-        }
-        
-        // Fallback for an unknown relationship
-        if (!found) {
-            segment_value = strdup(".?"); 
-        }
-    }
-
-
-    // Push segment
-    segments = realloc(segments, sizeof(char *) * (seg_count + 1));
-    segments[seg_count++] = segment_value;
-
-    cur = parent;
+  // Print Constraints
+  for (int i = 0; i < node->constraints_count; i++) {
+    Constraint *c = &node->constraints[i];
+    printf(" [%.*s: ", (int)c->name.length, c->name.start);
+    if (c->type == T_NUMBER)
+      printf("%.2f]", c->value.number);
+    else if (c->type == T_STRING)
+      printf("\"%.*s\"]", (int)c->value.string.length, c->value.string.start);
+    else if (c->type == T_TRUE)
+      printf("true]");
+    else if (c->type == T_FALSE)
+      printf("false]");
   }
-  
-  // --- Path Reconstruction ---
-  
-  // 1. Compute final length
-  size_t length = 2; // for `$` and '\0'
-  for (size_t i = 0; i < seg_count; i++)
-    length += strlen(segments[i]);
+  printf("\n");
 
-  char *path = malloc(length);
-  strcpy(path, "$");
-
-  // 2. Add segments reversed (from root to leaf)
-  for (size_t i = 0; i < seg_count; i++) {
-    char *segment = segments[seg_count - 1 - i];
-    
-    // Check if it's the very first segment after '$' and it starts with a '.'
-    // (e.g., the first property of the root object: e.g., turning "$.product" into "$product" or "$properties").
-    // We strictly use '$' as the root indicator, and then append the segments.
-    // The key is to skip the *first* leading dot from the *first* property name after '$'.
-    if (i == 0 && segment[0] == '.') {
-      // Append the segment starting from the second character (skipping the '.')
-      strcat(path, segment + 1); 
-    } else {
-      // Append the rest of the segments as is (they will be like .key or [index])
-      strcat(path, segment);
+  if (node->type == SC_OBJECT) {
+    if (node->required_head != -1) {
+      for (int i = 0; i < indent + 1; i++)
+        printf("  ");
+      printf("[Required: ");
+      int curr = node->required_head;
+      while (curr != -1) {
+        Token t = SCH_NODE_FROM_STACK(out, curr)->name;
+        printf("%.*s ", (int)t.string.length, t.string.start);
+        curr = SCH_NODE_FROM_STACK(out, curr)->next_sibling;
+      }
+      printf("]\n");
     }
+    print_schema(out, node->props_head, indent + 1);
+    if (node->additional_schema != -1) {
+      for (int i = 0; i < indent + 1; i++)
+        printf("  ");
+      printf("AdditionalProperties:\n");
+      print_schema(out, node->additional_schema, indent + 2);
+    }
+  } else if (node->type == SC_ARRAY) {
+    print_schema(out, node->items_head, indent + 1);
   }
 
-  // 3. Cleanup
-  for (size_t i = 0; i < seg_count; i++)
-    free(segments[i]);
-  free(segments);
-
-  return path;
+  if (node->next_sibling != -1) {
+    print_schema(out, node->next_sibling, indent);
+  }
+  /*#endregion*/
 }

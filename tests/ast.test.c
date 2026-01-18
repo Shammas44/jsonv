@@ -12,9 +12,9 @@ static void init(void) {
   /*#endregion*/
 }
 
-static bool run_scenario(Stack *ast, char *input) {
+static bool run_scenario(Stack *ast, unsigned char *input) {
   /*#region*/
-  lexer_init(&l, input, strlen(input));
+  lexer_init(l, input, strlen((char *)input));
   Stack control;
   unsigned char control_storage[1000] = {0};
   stack_init(&control, sizeof(int), control_storage, sizeof(control_storage));
@@ -39,13 +39,14 @@ Test(T, simple_valid, .init = init, .fini = fini) {
   char *cases[] = {
       "{}",                                     //
       "{\"k1\": \"v1\", \"k2\": \"v2\"}",       //
+      "{\"k1\": 1, \"k1\": 2}",                 // duplicate key
       "{\"k1\": [12,33, {\"k\": 2}] }",         //
       "{\"k1\": [12,33, {\"k\": 2}] }",         //
       "{\"k1\": [true,false, {\"k\": null}] }", //
   };
   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
     stack_init(&stack, sizeof(ASTNode), storage, sizeof(storage));
-    bool out = run_scenario(&stack, cases[i]);
+    bool out = run_scenario(&stack, (unsigned char *)cases[i]);
     cr_expect(out);
     if (!out)
       printf("[CASE %zu]: %s\n", i, cases[i]);
@@ -60,7 +61,6 @@ Test(T, simple_invalid, .init = init, .fini = fini) {
   unsigned char storage[1000] = {0};
   char *cases[] = {
       "{\"k1\": }",                       // missing value
-      "{\"k1\": 1, \"k1\": 2}",           // duplicate key
       "{\"k1\": [true false null] }",     // missing commas
       "{\"k1\": \"v1\" \"k2\": \"v2\" }", // missing commas
       "{\"k1\": [true }",                 // unclosed bracket
@@ -73,7 +73,7 @@ Test(T, simple_invalid, .init = init, .fini = fini) {
   };
   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
     stack_init(&stack, sizeof(ASTNode), storage, sizeof(storage));
-    bool out = !run_scenario(&stack, cases[i]);
+    bool out = !run_scenario(&stack, (unsigned char *)cases[i]);
     cr_expect(out);
     if (!out)
       printf("[CASE %zu]: %s\n", i, cases[i]);

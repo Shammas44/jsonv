@@ -6,6 +6,9 @@
 
 const Except MALFORMED_JSON = { "Malformed JSON data" };
 const Except MAXIMUM_NESTED_DEPTH_REACHED = { "Maximum nested depth reached." };
+const Except ARENA_LIMIT_REACHED = {"Arena limit reached."};
+const Except MAXIMUM_TOKEN_BYTES_REACHED = {"Maximum token's bytes reached."};
+const Except MAXIMUM_AST_NODE_REACHED = {"Maximum AST node reached."};
 
 Except_Frame *Except_stack = NULL;
 void Except_raise(const T *e, const char *file,

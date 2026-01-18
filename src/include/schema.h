@@ -1,42 +1,85 @@
 #ifndef _JSONV_SCHEMA_H_INCLUDED
 #define _JSONV_SCHEMA_H_INCLUDED
-#include "hint.h"
-#include "list.h"
-#include "type.h"
-#include "jsmn.h"
-#include <stdbool.h>
-#include <stdio.h>
+#include "stack.h"
+#include "token.h"
 
-typedef int (*jsonv_Validate_Handler)(void *);
+// --- MACROS ---
 
-typedef struct Jsonv_SchemaNode Jsonv_SchemaNode;
+// Use these to access nodes inside Stacks
+#define SCH_NODE_FROM_STACK(s, i) (&((SchemaNode *)(s)->data)[i])
+#define JSON_NODE_FROM_STACK(s, i) (&((ASTNode *)(s)->data)[i])
 
-typedef struct Jsonv_Contraint {
-  jsonv_Hint name;
-  jsonv_Hint value;
-  jsonv_Validate_Handler fn;
-} Jsonv_Contraint;
+#define MAX_SCHEMA_NODES 2048
+#define MAX_SCHEMA_CONTRAINTS 20
 
-typedef struct Jsonv_SchemaNode {
-  jsonv_t type;
-  jsonv_Hint key;
-  Jsonv_SchemaNode *parent;
-  // --- Constraints ---
-  List value_contraints;
-  bool required;
-  bool additional_properties;
-  // --- For OBJECT/ARRAY ---
-  Jsonv_SchemaNode *properties;
-  size_t property_count;
-  char **required_keys;
-  size_t required_keys_length;
-  Jsonv_SchemaNode *items;
-  // --- References ---
-  // In a full implementation, you'd store $ref information here,
-} Jsonv_SchemaNode;
+// 1. Grammar Commands
+typedef enum {
+  SC_CMD_BUILD_NODE,          // Main logic: Create node, parse attributes
+  SC_CMD_BUILD_REQUIRED_NODE, //
+  SC_CMD_CONNECT_PROPS,       // Post-logic: Link children to props_head
+  SC_CMD_CONNECT_ITEMS,       // Post-logic: Link child to items_head
+  SC_CMD_CONNECT_REQUIRED,    // Post-logic: Link strings to required_head
+  SC_CMD_CONNECT_ADDITIONAL,  // Link schema to additional_schema
+  SC_CMD_RETURN               // Finalize: Push result to result_stack
+} SchemaCmdType;
 
-// Frees the memory allocated for a compiled schema node.
-void jsonv_schema_free(Jsonv_SchemaNode *node);
-char *jsonv_build_schema_path(const Jsonv_SchemaNode *node, const char *json);
+// 2. Control Frame (What goes on the stack)
+typedef struct {
+  SchemaCmdType cmd;
+  int json_idx;        // The input JSON node we are processing
+  int schema_idx;      // The output Schema node we are operating on
+  int count;           // Counter (e.g., how many properties to pop)
+  Token name_override; // To pass property names (keys) down to children
+} SchemaControl;
+
+typedef enum {
+  SC_ANY,   // "true" or empty schema (matches everything)
+  SC_FALSE, // "false" schema (matches nothing)
+  SC_STRING,
+  SC_NUMBER,
+  SC_BOOLEAN,
+  SC_NULL,
+  SC_OBJECT,
+  SC_ARRAY,
+  SC_REQUIRED_FIELD // Special type for nodes in the "required" list
+} SchemaType;
+
+typedef struct {
+  TokenType type;
+  struct {
+    const unsigned char *start;
+    size_t length;
+  } name;
+  union {
+    struct {
+      const unsigned char *start;
+      size_t length;
+    } string;
+    double number;
+  } value;
+} Constraint;
+
+typedef struct {
+  SchemaType type;
+  Token name; // The property name (e.g. "name")
+
+  // --- Structure Pointers ---
+  int props_head;    // Object: Linked list of Property Schemas
+  int required_head; // Object: Linked list of Required Field Names
+  int items_head;    // Array: Schema for items
+  int next_sibling;  // Next item in the parent's list
+  int first_child;
+  int additional_schema; // Object: Schema for additional properties
+
+  // --- Validation Constraints ---
+  int constraints_count;
+  Constraint constraints[MAX_SCHEMA_CONTRAINTS];
+} SchemaNode;
+
+int parse_schema(Stack *in, int json_idx, Stack *out);
+void print_schema(Stack *out, int sc_idx, int indent);
+
+int parse_schema_stack(Stack *json_stack, int json_root, Stack *schema_stack,
+                       Stack *controls, Stack *result);
 
 #endif

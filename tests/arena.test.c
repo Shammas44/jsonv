@@ -1,10 +1,12 @@
-#include "arena.h" // Your header file
+#include "arena.h"  // Your header file
+#include "except.h" // Your header file
 #include <criterion/criterion.h>
 #include <criterion/logging.h>
 #include <criterion/new/assert.h>
 
 // Helper to cast opaque Arena* to our internal struct
 Arena *get_internal(Arena *a) { return (Arena *)a; }
+extern const Except ARENA_LIMIT_REACHED;
 
 // -----------------------------------------------------------------------------
 // TEST FIXTURES
@@ -58,9 +60,12 @@ Test(arena, alignment, .init = setup, .fini = teardown) {
   void *p2 = arena_alloc(arena, 3);
   void *p3 = arena_alloc(arena, 11);
 
-  cr_expect_eq((uintptr_t)p1 % ARENA_ALIGNMENT,0, "Pointer 1 should be 16-byte aligned");
-  cr_expect_eq((uintptr_t)p2 % ARENA_ALIGNMENT, 0, "Pointer 2 should be 16-byte aligned");
-  cr_expect_eq((uintptr_t)p3 % ARENA_ALIGNMENT, 0, "Pointer 3 should be 16-byte aligned");
+  cr_expect_eq((uintptr_t)p1 % ARENA_ALIGNMENT, 0,
+               "Pointer 1 should be 16-byte aligned");
+  cr_expect_eq((uintptr_t)p2 % ARENA_ALIGNMENT, 0,
+               "Pointer 2 should be 16-byte aligned");
+  cr_expect_eq((uintptr_t)p3 % ARENA_ALIGNMENT, 0,
+               "Pointer 3 should be 16-byte aligned");
 }
 
 Test(arena, chaining_expansion, .init = setup, .fini = teardown) {
@@ -95,9 +100,13 @@ Test(arena, memory_limit_enforcement, .init = setup, .fini = teardown) {
     cr_assert(arena_alloc(arena, 800) != NULL, "Should fit in limit");
   }
 
-  // This should push us over 5000 bytes (reserved)
-  void *fail_ptr = arena_alloc(arena, 2000);
-
+  void *fail_ptr = NULL;
+  TRY {
+    // This should push us over 5000 bytes (reserved)
+    fail_ptr = arena_alloc(arena, 2000);
+  }
+  EXCEPT(ARENA_LIMIT_REACHED) {}
+  END_TRY;
   cr_assert(fail_ptr == NULL, "Alloc should fail when exceeding max_limit");
 }
 

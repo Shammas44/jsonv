@@ -29,7 +29,7 @@ These keywords constrain the number of items and the schemas of items within an 
 
 - [ ] `maxItems`: Array must have a number of items <= to this value.
 - [ ] `minItems`: Array must have a number of items >= to this value.
-- [x] `items` Defines the schema for the items in the array.
+- [ ] `items` Defines the schema for the items in the array.
 - [ ] `uniqueItems`: If `true`, all items in the array must be unique.
 - [ ] `contains`: Array is valid only if **at least one** of its items validates against schema.
 
@@ -88,104 +88,12 @@ These keywords are used for defining, referencing, and reusing schemas.
 - [ ] `$anchor`: Defines a local fragment identifier.
 - [ ] `$vocabulary`: Declares which vocabularies (sets of keywords) are used (Draft 2020-12).
 
-## Tokens
+## Grammar
 
-# `{`
-- [ ] `{`
-- [x] `}`
-- [ ] `]`
-- [ ] `[`
-- [x] `[string]`
-- [ ] `[number]`
-- [ ] `true, false, null`
-- [ ] `:`
-- [ ] `,`
-
-# `}`
-- [ ] `{`
-- [x] `}` * si parent est un objet
-- [x] `]` * si parent est un tableau
-- [ ] `[`
-- [ ] `[string]`
-- [ ] `[number]`
-- [ ] `true, false, null`
-- [ ] `:`
-- [x] `,`
-- [x] `EOF`
-
-# `[`
-- [x] `{`
-- [ ] `}`
-- [x] `]`
-- [x] `[`
-- [x] `[string]`
-- [x] `[number]`
-- [x] `true, false, null`
-- [ ] `:`
-- [ ] `,`
-
-# `]`
-- [x] `{`
-- [x] `}`
-- [x] `]`
-- [x] `[`
-- [ ] `[string]`
-- [ ] `[number]`
-- [ ] `true, false, null`
-- [ ] `:`
-- [ ] `,`
-
-# `[string]`
-- [ ] `{`
-- [x] `}` * si parent est un objet
-- [x] `]` * si parent est un tableau
-- [ ] `[`
-- [ ] `[string]`
-- [ ] `[number]`
-- [ ] `true, false, null`
-- [x] `:` * si n-2 != ':'
-- [x] `,`
-
-# `[number]`
-- [ ] `{`
-- [x] `}`
-- [x] `]`
-- [ ] `[`
-- [ ] `[string]`
-- [ ] `[number]`
-- [ ] `true, false, null`
-- [ ] `:`
-- [x] `,`
-
-# `true ,false ,null`
-- [ ] `{`
-- [x] `}`
-- [x] `]`
-- [ ] `[`
-- [ ] `[string]`
-- [ ] `[number]`
-- [ ] `true, false, null`
-- [ ] `:`
-- [x] `,`
-
-# `:`
-- [x] `{`
-- [ ] `}`
-- [ ] `]`
-- [x] `[`
-- [x] `[string]`
-- [x] `[number]`
-- [x] `true, false, null`
-- [ ] `:`
-- [ ] `,`
-
-# `,`
-- [x] `{` * si parent est un tableau
-- [x] `}` * si l'élément ne clos par le parent
-- [x] `[` * si parent est un tableau
-- [x] `]` * si l'élément ne clos par le parent
-- [x] `[string]` * si parent est un tableau 
-- [x] `[number]` * si parent est un tableau
-- [x] `true` ,`false`, `null` * si parent est un tableau
-- [ ] `:`
-- [ ] `,`
+- `JSON` $\rightarrow$ Object
+- `Value` $\rightarrow$ Object | Array | String | Number | "true" | "false" | "null"
+- `Object` $\rightarrow$ "{" Members "}" | "{ }"
+- `Members` $\rightarrow$ Pair | Pair "," Members
+- `Pair` $\rightarrow$ String ":" Value
+- `Array` $\rightarrow$ "[" Elements "]" | "[ ]"
+- `Elements` $\rightarrow$ Value | Value "," Elements

@@ -2,21 +2,17 @@
 #define _JSONV_CTX_H_INCLUDED
 #include "arena.h"
 #include "error.h"
-#include "node.h"
 
 typedef struct Jsonv_Context Jsonv_Context;
 
-bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json, Arena*arena);
-int jsonv_ctx_prepare_schema(Jsonv_Context **ctx, const char *json_schema,
-                             jsmntok_t **tok);
+bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json,
+                            Arena *arena);
+bool jsonv_ctx_prepare_schema(Jsonv_Context **ctx, const unsigned char *json,
+                              Arena *arena);
 void jsonv_ctx_print_data(Jsonv_Context *ctx);
-void jsonv_ctx_print_schema(Jsonv_Context *ctx, const char *json);
+void jsonv_ctx_print_schema(Jsonv_Context *ctx);
 void jsonv_ctx_free(Jsonv_Context *ctx);
-int jsonv_ctx_validate(Jsonv_Context *ctx, const char *schema,
-                       const char *data);
+int jsonv_ctx_validate(Jsonv_Context *ctx);
 Jsonv_error_stack *jsonv_ctx_errors(Jsonv_Context *ctx);
-
-Jsonv_Node *parse_parse_node(const char *json, jsmntok_t **tok, int tok_count,
-                             Jsonv_path *path, Jsonv_error_stack *errors);
 
 #endif

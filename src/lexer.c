@@ -2,21 +2,33 @@
 #include "assert.h"
 #include "token.h"
 #include <errno.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
 #define T Lexer
 
 static void skip_whitespace(T *l);
-static Token lex_string(T *l, const unsigned char *token_start);
-static Token lex_literal(T *l, const unsigned char *token_start);
-static Token lex_number(T *l, const unsigned char *token_start);
+static bool advance_if_match(Lexer *l, char expected);
+static int is_hex_digit(char c);
+static bool is_digit(char c);
+static Token parse_string(T *l, const unsigned char *token_start);
+static Token parse_literal(T *l, const unsigned char *token_start);
+static Token parse_number(T *l, const unsigned char *token_start);
 
-typedef struct T {
-  const unsigned char *source; // The entire JSON string input
-  size_t source_len;
-  size_t current_pos;
-} T;
+/*
+ * Helper to advance the lexer position if the current character matches the
+ * expected character.
+ */
+static bool advance_if_match(Lexer *l, char expected) {
+  /*#region*/
+  if (l->current_pos < l->source_len && l->source[l->current_pos] == expected) {
+    l->current_pos++;
+    return true;
+  }
+  return false;
+  /*#endregion*/
+}
 
 static void skip_whitespace(T *l) {
   /*#region*/
@@ -38,7 +50,13 @@ static int is_hex_digit(char c) {
   /*#endregion*/
 }
 
-static Token lex_string(Lexer *l, const unsigned char *token_start) {
+static bool is_digit(char c) {
+  /*#region*/
+  return c >= '0' && c <= '9';
+  /*#endregion*/
+}
+
+static Token parse_string(Lexer *l, const unsigned char *token_start) {
   /*#region*/
   // We already consumed the opening '"'
   size_t start_pos = l->current_pos;
@@ -104,24 +122,24 @@ static Token lex_string(Lexer *l, const unsigned char *token_start) {
   /*#endregion*/
 }
 
-static Token lex_literal(T *l, const unsigned char *token_start) {
+static Token parse_literal(T *l, const unsigned char *token_start) {
   /*#region*/
   // We have already consumed the first char (t, f, or n)
 
   if (token_start[0] == 't' && l->current_pos + 3 <= l->source_len &&
-      strncmp((char*)l->source + l->current_pos, "rue", 3) == 0) {
+      strncmp((char *)l->source + l->current_pos, "rue", 3) == 0) {
     l->current_pos += 3;
     return (Token){T_TRUE, {0}}; // "true"
   }
 
   if (token_start[0] == 'f' && l->current_pos + 4 <= l->source_len &&
-      strncmp((char*)l->source + l->current_pos, "alse", 4) == 0) {
+      strncmp((char *)l->source + l->current_pos, "alse", 4) == 0) {
     l->current_pos += 4;
     return (Token){T_FALSE, {0}}; // "false"
   }
 
   if (token_start[0] == 'n' && l->current_pos + 3 <= l->source_len &&
-      strncmp((char*)l->source + l->current_pos, "ull", 3) == 0) {
+      strncmp((char *)l->source + l->current_pos, "ull", 3) == 0) {
     l->current_pos += 3;
     return (Token){T_NULL, {0}}; // "null"
   }
@@ -131,74 +149,61 @@ static Token lex_literal(T *l, const unsigned char *token_start) {
   /*#endregion*/
 }
 
-/*
- * Checks if a character is a decimal digit (0-9).
- */
-static bool is_digit(char c) {
+static Token parse_number(Lexer *l, const unsigned char *token_start) {
   /*#region*/
-  return c >= '0' && c <= '9';
-  /*#endregion*/
-}
-
-/*
- * Checks if a character is a digit or a sign (+ or -).
- */
-// static bool is_digit_or_sign(char c) {
-//   /*#region*/
-//   return is_digit(c) || c == '+' || c == '-';
-//   /*#endregion*/
-// }
-
-/*
- * Helper to advance the lexer position if the current character matches the
- * expected character.
- */
-static bool advance_if_match(Lexer *l, char expected) {
-  /*#region*/
-  if (l->current_pos < l->source_len && l->source[l->current_pos] == expected) {
-    l->current_pos++;
-    return true;
-  }
-  return false;
-  /*#endregion*/
-}
-
-static Token lex_number(Lexer *l, const unsigned char *token_start) {
   size_t start_pos = l->current_pos - 1;
 
-  // --- 1. Integer Part ---
-  if (token_start[0] == '-') {
-    if (!is_digit(l->source[l->current_pos])) {
-      return (Token){T_ERROR, .string = {token_start, 1}};
-    }
-  }
+  // --- 1. Handle Start Conditions ---
 
-  if (token_start[0] == '0' && l->current_pos < l->source_len) {
-    if (is_digit(l->source[l->current_pos])) {
-      return (Token){T_ERROR, .string = {token_start, 2}};
-    }
-  }
-
-  while (l->current_pos < l->source_len &&
-         is_digit(l->source[l->current_pos])) {
-    l->current_pos++;
-  }
-
-  // --- 2. Fractional Part ---
-  if (l->current_pos < l->source_len && l->source[l->current_pos] == '.') {
-    l->current_pos++;
+  // CASE A: Number starts with '.' (e.g., ".2")
+  if (token_start[0] == '.') {
+    // If it starts with '.', it MUST be followed by a digit.
+    // (A standalone '.' is usually a different token, not a number)
     if (l->current_pos >= l->source_len ||
         !is_digit(l->source[l->current_pos])) {
       return (Token){T_ERROR,
-                     .string = {token_start, l->current_pos - start_pos}};
+                     .string = {(const unsigned char *)token_start, 1}};
     }
+
+    // Consume the digits (these are the fractional part)
     while (l->current_pos < l->source_len &&
            is_digit(l->source[l->current_pos])) {
       l->current_pos++;
     }
   }
+  // CASE B: Number starts with Digit, '+', or '-'
+  else {
+    // 1a. Sign Check
+    if (token_start[0] == '-' || token_start[0] == '+') {
+      if (!is_digit(l->source[l->current_pos])) {
+        return (Token){T_ERROR,
+                       .string = {(const unsigned char *)token_start, 1}};
+      }
+    }
 
-  // --- 3. Exponent Part ---
+    // 1b. Integer Part
+    while (l->current_pos < l->source_len &&
+           is_digit(l->source[l->current_pos])) {
+      l->current_pos++;
+    }
+
+    // 1c. Fractional Part (Optional)
+    if (l->current_pos < l->source_len && l->source[l->current_pos] == '.') {
+      l->current_pos++; // Consume '.'
+      if (l->current_pos >= l->source_len ||
+          !is_digit(l->source[l->current_pos])) {
+        return (Token){T_ERROR, .string = {(const unsigned char *)token_start,
+                                           l->current_pos - start_pos}};
+      }
+      while (l->current_pos < l->source_len &&
+             is_digit(l->source[l->current_pos])) {
+        l->current_pos++;
+      }
+    }
+  }
+
+  // --- 2. Exponent Part (Shared) ---
+  // Works for both "1.2e5" and ".2e5"
   char c = l->source[l->current_pos];
   if (c == 'e' || c == 'E') {
     l->current_pos++;
@@ -207,8 +212,8 @@ static Token lex_number(Lexer *l, const unsigned char *token_start) {
 
     if (l->current_pos >= l->source_len ||
         !is_digit(l->source[l->current_pos])) {
-      return (Token){T_ERROR,
-                     .string = {token_start, l->current_pos - start_pos}};
+      return (Token){T_ERROR, .string = {(const unsigned char *)token_start,
+                                         l->current_pos - start_pos}};
     }
     while (l->current_pos < l->source_len &&
            is_digit(l->source[l->current_pos])) {
@@ -216,7 +221,7 @@ static Token lex_number(Lexer *l, const unsigned char *token_start) {
     }
   }
 
-  // --- 4. Parse Value with Overflow Check ---
+  // --- 3. Parse Value ---
   size_t length = l->current_pos - start_pos;
   double value = 0.0;
   char buffer[128];
@@ -226,25 +231,20 @@ static Token lex_number(Lexer *l, const unsigned char *token_start) {
     buffer[length] = '\0';
 
     char *endptr;
-    errno = 0; // Reset errno before calling strtod
+    errno = 0;
     value = strtod(buffer, &endptr);
 
-    // Check 1: Did parsing happen?
     if (endptr == buffer) {
       value = 0.0;
-    }
-    // Check 2: Overflow or Underflow?
-    else if (errno == ERANGE) {
-      // errno is set to ERANGE if the value is too large (infinity)
-      // or too small (underflow).
+    } else if (errno == ERANGE) {
       value = 0.0;
     }
   } else {
-    // Error: Number string too long for buffer
     value = 0.0;
   }
 
   return (Token){T_NUMBER, .number = value};
+  /*#endregion*/
 }
 
 Token lexer_next_token(T *l) {
@@ -276,10 +276,12 @@ Token lexer_next_token(T *l) {
 
   // Literal Tokens
   case '"':
-    return lex_string(l, token_start);
+    return parse_string(l, token_start);
 
   // Numbers and Literals (true, false, null)
   case '-': // Numbers can start with '-'
+  case '+': // Numbers can start with '+'
+  case '.': // Numbers can start with '+'
   case '0':
   case '1':
   case '2':
@@ -290,12 +292,12 @@ Token lexer_next_token(T *l) {
   case '7':
   case '8':
   case '9':
-    return lex_number(l, token_start);
+    return parse_number(l, token_start);
 
   case 't': // Could be 'true'
   case 'f': // Could be 'false'
   case 'n': // Could be 'null'
-    return lex_literal(l, token_start);
+    return parse_literal(l, token_start);
 
   default:
     return (Token){T_ERROR, .string = {token_start, 1}}; // Unexpected character
@@ -303,15 +305,14 @@ Token lexer_next_token(T *l) {
   /*#endregion*/
 }
 
-void lexer_init(T **l, const unsigned char *source, size_t len) {
+void lexer_init(T *l, const unsigned char *source, size_t len) {
   /*#region*/
-  assert(*l);
+  assert(l);
   assert(source);
   assert(len);
-  Lexer *self = *l;
-  self->source = source;
-  self->source_len = len;
-  self->current_pos = 0;
+  l->source = source;
+  l->source_len = len;
+  l->current_pos = 0;
   /*#endregion*/
 }
 

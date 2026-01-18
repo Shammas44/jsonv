@@ -1,15 +1,17 @@
-#include "jsmn.h"
+#include "file.h"
 #include "jsonv.h"
-#include "lexer.h"
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
+#include <unistd.h>
 
 static char *colors[] = {
     "\x1b[30m", "\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[34m",
@@ -28,6 +30,12 @@ typedef enum {
   Reset,
 } Keys;
 
+static inline uint64_t now_ns(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (uint64_t)ts.tv_sec * 1000000000ull + ts.tv_nsec;
+}
+
 #define MAX_PATH_LENGTH 1024
 #define INITIAL_CAPACITY 16
 #define KEY(index)                                                             \
@@ -36,141 +44,38 @@ typedef enum {
     _key;                                                                      \
   })
 
-typedef struct {
-  char **paths;
-  size_t count;
-  size_t capacity;
-} FilePathList;
+// static bool jq_accepts(const char *buf, size_t len) {
+//   /*#region*/
+//   int inpipe[2];
+//   int pid;
 
-static bool file_path_list_init(FilePathList *list) {
-  /*#region*/
-  list->paths = (char **)malloc(INITIAL_CAPACITY * sizeof(char *));
-  if (list->paths == NULL) {
-    list->count = 0;
-    list->capacity = 0;
-    return false;
-  }
-  list->count = 0;
-  list->capacity = INITIAL_CAPACITY;
-  return true;
-  /*#endregion*/
-}
+//   if (pipe(inpipe) != 0)
+//     return false;
 
-static void file_path_list_free(FilePathList *list) {
-  /*#region*/
-  if (!list)
-    return;
-  for (size_t i = 0; i < list->count; i++) {
-    free(list->paths[i]); // Free the path string itself
-  }
-  free(list->paths); // Free the array of pointers
-  list->paths = NULL;
-  list->count = 0;
-  list->capacity = 0;
-  /*#endregion*/
-}
+//   pid = fork();
+//   if (pid == 0) {
+//     /* child */
+//     dup2(inpipe[0], STDIN_FILENO);
+//     close(inpipe[0]);
+//     close(inpipe[1]);
 
-static bool file_path_list_add(FilePathList *list, const char *path) {
-  /*#region*/
-  if (list->count == list->capacity) {
-    size_t new_capacity = list->capacity * 2;
-    char **new_paths =
-        (char **)realloc(list->paths, new_capacity * sizeof(char *));
+//     execlp("jq", "jq", "-e", "-s",
+//            "length == 1 and (.[0] | type == \"object\")", NULL);
+//     _exit(1);
+//   }
 
-    if (new_paths == NULL) {
-      return false; // Reallocation failed
-    }
-    list->paths = new_paths;
-    list->capacity = new_capacity;
-  }
+//   /* parent */
+//   close(inpipe[0]);
+//   ssize_t k = write(inpipe[1], buf, len);
+//   (void)(k);
+//   close(inpipe[1]);
 
-  // Duplicate the string and store the heap pointer
-  list->paths[list->count] = strdup(path);
-  if (list->paths[list->count] == NULL) {
-    return false; // strdup failed
-  }
-  list->count++;
-  return true;
-  /*#endregion*/
-}
+//   int status;
+//   waitpid(pid, &status, 0);
 
-static void list_files_recursive_helper(const char *basePath,
-                                        FilePathList *list) {
-  /*#region*/
-  char path[MAX_PATH_LENGTH];
-  struct dirent *dp;
-  DIR *dir = NULL;
-
-  dir = opendir(basePath);
-  if (!dir) {
-    // Log the error but continue execution
-    fprintf(stderr, "Warning: Could not open directory %s: %s\n", basePath,
-            strerror(errno));
-    return;
-  }
-
-  while ((dp = readdir(dir)) != NULL) {
-    const char *filename = dp->d_name;
-
-    // Skip current (.) and parent (..) directories
-    if (strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
-      continue;
-    }
-
-    // Construct the full path
-    if (snprintf(path, sizeof(path), "%s/%s", basePath, filename) >=
-        (int)sizeof(path)) {
-      // Path buffer overflow (handle gracefully)
-      fprintf(stderr, "Warning: Path exceeded MAX_PATH_LENGTH: %s/%s\n",
-              basePath, filename);
-      continue;
-    }
-
-    if (dp->d_type == DT_DIR) {
-      // Recurse into subdirectory
-      list_files_recursive_helper(path, list);
-
-    } else if (dp->d_type == DT_REG) {
-      // --- NEW: Check for .txt extension ---
-      size_t name_len = strlen(filename);
-
-      // Check if the filename is long enough to contain ".txt" (at least 4
-      // characters)
-      if (name_len >= 4 && strcmp(filename + name_len - 4, ".txt") == 0) {
-        // Ignore the file if it ends in ".txt"
-        continue;
-      }
-      // --- END NEW CHECK ---
-
-      // Add regular file path to the dynamic array
-      if (!file_path_list_add(list, path)) {
-        fprintf(stderr, "Error: Failed to allocate memory for path: %s\n",
-                path);
-        // Exit or handle memory allocation failure
-      }
-    }
-  }
-
-  closedir(dir);
-  /*#endregion*/
-}
-
-static FilePathList list_files_recursively(const char *basePath) {
-  FilePathList list;
-  /*#region*/
-  if (!file_path_list_init(&list)) {
-    fprintf(stderr, "Fatal Error: Failed to initialize file path list.\n");
-    // Return an empty, initialized list on failure
-    list.paths = NULL;
-    list.count = 0;
-    list.capacity = 0;
-    return list;
-  }
-
-  list_files_recursive_helper(basePath, &list);
-  return list;
-  /*#endregion*/
-}
+//   return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+//   /*#endregion*/
+// }
 
 static char *timestamp_to_string(size_t timestamp) {
   /*#region*/
@@ -200,49 +105,6 @@ static void event_log(Keys key, const char *format, ...) {
   /*#endregion*/
 }
 
-static char *read_file(const char *filename, size_t *out_size) {
-  /*#region*/
-  FILE *fp = fopen(filename, "rb");
-  if (!fp)
-    return NULL;
-
-  // Move to end to determine file size
-  if (fseek(fp, 0, SEEK_END) != 0) {
-    fclose(fp);
-    return NULL;
-  }
-
-  long size = ftell(fp);
-  if (size < 0) {
-    fclose(fp);
-    return NULL;
-  }
-  rewind(fp);
-
-  // Allocate buffer (+1 for NULL terminator)
-  char *buffer = malloc(size + 1);
-  if (!buffer) {
-    fclose(fp);
-    return NULL;
-  }
-
-  // Read file into buffer
-  size_t read_bytes = fread(buffer, 1, size, fp);
-  fclose(fp);
-
-  if (read_bytes != (size_t)size) {
-    free(buffer);
-    return NULL;
-  }
-
-  buffer[size] = '\0'; // Null terminate
-  if (out_size)
-    *out_size = size;
-
-  return buffer;
-  /*#endregion*/
-}
-
 static void print_error(Jsonv_Context *ctx) {
   /*#region*/
   Jsonv_error_stack *errors = jsonv_ctx_errors(ctx);
@@ -252,46 +114,27 @@ static void print_error(Jsonv_Context *ctx) {
   /*#endregion*/
 }
 
-static int logic(char *data, char *schema, Jsonv_Context **ctx) {
+static bool logic(unsigned char *data, unsigned char *schema,
+                  Jsonv_Context **ctx, Arena *arena) {
   /*#region*/
-  (void)(schema);
-  int e = 0;
-  // char *json_schema = read_file("schema.json", &size);
-  // char *json_data = read_file("data.json", &size);
+  bool e = jsonv_ctx_prepare_schema(ctx, schema, arena);
+  if (e)
+    e = jsonv_ctx_prepare_data(ctx, data, arena);
+  if (e)
+    e = jsonv_ctx_validate(*ctx);
 
-  // jsmntok_t *s_tok = NULL;
-  // e = jsonv_ctx_prepare_schema(&ctx, json_schema, &s_tok);
-  // if (e < 0) {
-  //   print_error(ctx);
-  //   goto clean;
-  // }
-  // jsonv_ctx_print_schema(ctx, json_schema);
-
-  e = jsonv_ctx_prepare_data(ctx, data);
-  if (e <= 0) {
-    goto clean;
-  }
-  // jsonv_ctx_print_data(ctx, data);
-
-  // e = jsonv_ctx_validate(ctx, json_schema, json_data);
-  // if (e) {
-  //   print_error(ctx);
-  //   goto clean;
-  // }
-clean:
-  // free(json_schema);
   return e;
   /*#endregion*/
 }
 
-void single_file(char *path) {
+void single_file(char *path, unsigned char *schema, Arena *arena) {
   /*#region*/
   Jsonv_Context *ctx = NULL;
   size_t size;
-  char *json_data = read_file(path, &size);
+  unsigned char *json_data = file_read(path, &size);
   printf("input: %s\n", json_data);
-  int e = logic(json_data, NULL, &ctx);
-  if (e > 0) {
+  bool e = logic(json_data, schema, &ctx, arena);
+  if (e) {
     event_log(Green, "Succes: %s", "Payload parsed.");
   } else {
     print_error(ctx);
@@ -302,14 +145,46 @@ void single_file(char *path) {
   /*#endregion*/
 }
 
-void single_payload(char *payload) {
+void multiple_files(char *path, unsigned char *schema, Arena *arena) {
+  /*#region*/
+  (void)(schema);
+  FilePathList files = file_list_recursively(path);
+  printf("Found %zu files\n", files.count);
+  for (size_t i = 0; i < files.count; i++) {
+    Jsonv_Context *ctx = NULL;
+
+    size_t size;
+    unsigned char *json_data = file_read(files.paths[i], &size);
+    bool e = logic(json_data, NULL, &ctx, arena);
+    printf("=== CASE %zu ==============\n", i);
+    printf("%s\n", files.paths[i]);
+    printf("input: %s\n", json_data);
+    if (e) {
+      event_log(Green, "Succes 1: %s", "$ Payload parsed.");
+    } else {
+      event_log(Red, "Error 1: %s", "$ Payload unvalid.");
+      // print_error(ctx);
+    }
+    free(json_data);
+    if (ctx)
+      jsonv_ctx_free(ctx);
+  }
+
+  file_path_list_free(&files);
+  /*#endregion*/
+}
+
+void single_payload(unsigned char *payload, unsigned char *schema,
+                    Arena *arena) {
   /*#region*/
   Jsonv_Context *ctx = NULL;
-  printf("input: %s\n", payload);
-  int e = logic(payload, NULL, &ctx);
-  if (e > 0) {
+  // printf("input: %s\n", payload);
+  bool e = logic(payload, schema, &ctx, arena);
+  (void)(e);
+  if (e) {
     event_log(Green, "Succes: %s", "Payload parsed.");
-    jsonv_ctx_print_data(ctx, payload);
+    jsonv_ctx_print_data(ctx);
+    // jsonv_ctx_print_schema(ctx);
   } else {
     print_error(ctx);
   }
@@ -320,32 +195,36 @@ void single_payload(char *payload) {
 
 int main() {
   /*#region*/
-  single_payload("{\"key\":\"value1\", \"key2\": [\"item1\", \"item2\", {\"key\": 123}]}");
-  // single_file("./seed_corpus/valid2.json");
+  uint64_t start = now_ns();
+  // for (int i = 0; i < 1000; i++) {
+  // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold
+  Arena *arena = arena_create(4096, 1024 * 1024, 3 * 4096);
+  size_t size;
+  unsigned char *schema = file_read("./schema2.json", &size);
+
+  char data[] = "{"
+                "\"name\": \"aaaaaaa\","
+                "\"price\": 2,"
+                "\"description\": {"
+                "   \"name\": \"cool\","
+                "   \"prices\": ["
+                "       2, \"truc\""
+                "     ]"
+                "   }"
+                "}";
+  single_payload((unsigned char *)data, schema, arena);
+  // single_file("./seed_corpus/valid2.json", schema, arena);
+  // multiple_files("./output_fuzz/default/crashes", schema, arena);
+  arena_destroy(arena);
+  free(schema);
+  // }
+
+  uint64_t end = now_ns();
+  uint64_t elapsed_ns = end - start;
+  uint64_t seconds = elapsed_ns / 1000000000ull;
+  uint64_t milliseconds = (elapsed_ns % 1000000000ull) / 1000000ull;
+  printf("time: %llu.%03llu s\n", (unsigned long long)seconds,
+         (unsigned long long)milliseconds);
   return 0;
-  const char *start_dir = "./output_fuzz/default/queue";
-  FilePathList files = list_files_recursively(start_dir);
-
-  printf("Found %zu files\n", files.count);
-  for (size_t i = 0; i < files.count; i++) {
-    Jsonv_Context *ctx = NULL;
-
-    size_t size;
-    char *json_data = read_file(files.paths[i], &size);
-    int e = logic(json_data, NULL, &ctx);
-    if (e > 0) {
-      printf("=== CASE %zu ==============\n", i);
-      printf("%s\n", files.paths[i]);
-      printf("input: %s\n", json_data);
-      event_log(Green, "Succes 1: %s", "$ Payload parsed.");
-    } else {
-      // print_error(ctx);
-    }
-    free(json_data);
-    if (ctx)
-      jsonv_ctx_free(ctx);
-  }
-
-  file_path_list_free(&files);
   /*#endregion*/
 }

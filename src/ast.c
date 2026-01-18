@@ -2,16 +2,21 @@
 #include "assert.h"
 #include "lexer.h"
 #include "stack.h"
+#include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define MARK_OBJECT_END 200
 #define MARK_ARRAY_END 201
+#define OBJECT_SENTINEL -1
+#define ARRAY_SENTINEL -2
+#define MAX_JSON_DEPTH 64
 
 #define PUSH(stack, value) stack_push((stack), &(typeof(value)){(value)})
 
 // Grammar Rules (Non-Terminals)
-// We start these at a high number to avoid clashing with your TokenType values
+// We start these at a high number to avoid clashing with 'TokenType' values
 typedef enum {
   RULE_JSON = 100,
   RULE_VALUE,
@@ -82,23 +87,24 @@ void print_token(TokenType type) {
 }
 
 static ASTNode new_node(ASTNodeType type, Token t) {
+  /*#region*/
   ASTNode node;
   node.type = type;
   node.token = t;
   node.first_child = -1;
   node.next_sibling = -1;
+  node.parent = -1;
   return node;
+  /*#endregion*/
 }
 
-bool jsonv_ast(Lexer *lexer, Stack *nodes, Stack *children, Stack *controls) {
+void jsonv_ast(Lexer *lexer, Stack *nodes, Stack *children, Stack *controls) {
   /*#region*/
   // 1. Reset Stacks
   nodes->top = -1;
   children->top = -1;
   controls->top = -1;
-
-  // Shared sentinel variable to avoid scope issues
-  int sentinel = -1;
+  int depth = 0;
 
   PUSH(controls, RULE_JSON);
   Token c = lexer_next_token(lexer);
@@ -108,24 +114,29 @@ bool jsonv_ast(Lexer *lexer, Stack *nodes, Stack *children, Stack *controls) {
     int expected = *(int *)stack_pop(controls);
 
     // --- MATCHING TERMINALS ---
-    if (expected < 100) {
-      if (expected == (int)c.type) {
-        if (c.type == T_STRING || c.type == T_NUMBER || c.type == T_TRUE ||
-            c.type == T_FALSE || c.type == T_NULL) {
+    if (expected < RULE_JSON) {
 
-          ASTNode leaf = new_node(AST_LEAF, c);
-          stack_push(nodes, &leaf);
-          int idx = nodes->top;
-          stack_push(children, &idx);
-        }
-        c = n;
-        n = lexer_next_token(lexer);
-        if (n.type == T_EOF && controls->top == -1) {
-          break;
-        }
-        continue;
+      if (expected != (int)c.type)
+        RAISE(MALFORMED_JSON);
+
+      if (c.type == T_STRING    //
+          || c.type == T_NUMBER //
+          || c.type == T_TRUE   //
+          || c.type == T_FALSE  //
+          || c.type == T_NULL) {
+        ASTNode leaf = new_node(AST_LEAF, c);
+        stack_push(nodes, &leaf);
+        stack_push(children, &nodes->top);
       }
-      return false;
+
+      c = n;
+      n = lexer_next_token(lexer);
+
+      if (n.type == T_EOF && controls->top == -1) {
+        break;
+      }
+
+      continue;
     }
 
     // --- EXPANDING RULES ---
@@ -140,17 +151,24 @@ bool jsonv_ast(Lexer *lexer, Stack *nodes, Stack *children, Stack *controls) {
         PUSH(controls, RULE_OBJECT);
       } else if (c.type == T_BRACKET_OPEN) {
         PUSH(controls, RULE_ARRAY);
-      } else if (c.type == T_STRING || c.type == T_NUMBER || c.type == T_TRUE ||
-                 c.type == T_FALSE || c.type == T_NULL) {
+      } else if (c.type == T_STRING    //
+                 || c.type == T_NUMBER //
+                 || c.type == T_TRUE   //
+                 || c.type == T_FALSE  //
+                 || c.type == T_NULL) {
         PUSH(controls, c.type);
       } else
-        return false;
+        RAISE(MALFORMED_JSON);
       break;
 
     case RULE_OBJECT: {
+      depth++;
+      if (depth > MAX_JSON_DEPTH)
+        RAISE(MAXIMUM_NESTED_DEPTH_REACHED);
       PUSH(controls, MARK_OBJECT_END);
-      PUSH(children, sentinel); // Safe push
+      PUSH(children, OBJECT_SENTINEL); // Safe push
       PUSH(controls, T_BRACE_CLOSE);
+      // Check lookahead 'n' to decide if we push members
       if (n.type != T_BRACE_CLOSE)
         PUSH(controls, RULE_MEMBERS);
       PUSH(controls, T_BRACE_OPEN);
@@ -158,8 +176,11 @@ bool jsonv_ast(Lexer *lexer, Stack *nodes, Stack *children, Stack *controls) {
     }
 
     case RULE_ARRAY: {
+      depth++;
+      if (depth > MAX_JSON_DEPTH)
+        RAISE(MAXIMUM_NESTED_DEPTH_REACHED);
       PUSH(controls, MARK_ARRAY_END);
-      PUSH(children, sentinel); // Safe push
+      PUSH(children, ARRAY_SENTINEL); // Safe push
       PUSH(controls, T_BRACKET_CLOSE);
       // Check lookahead 'n' to decide if we push elements
       if (n.type != T_BRACKET_CLOSE)
@@ -205,42 +226,61 @@ bool jsonv_ast(Lexer *lexer, Stack *nodes, Stack *children, Stack *controls) {
       int obj_idx = nodes->top;
       int head = -1;
 
-      while (children->top >= 0 &&
-             *(int *)stack_peek(children, children->top) != -1) {
+      // Loop through children (Popping from Last to First)
+      while (*(int *)stack_peek(children, children->top) != OBJECT_SENTINEL) {
         int val_idx = *(int *)stack_pop(children);
         int key_idx = *(int *)stack_pop(children);
 
         ASTNode *pool = (ASTNode *)nodes->data;
+        ASTNode *val = &pool[val_idx];
+        ASTNode *key = &pool[key_idx];
+        val->parent = key_idx;
+        key->parent = obj_idx;
 
         // --- DUPLICATE CHECK START ---
-        // Traverse the list of keys we have ALREADY linked
+        bool is_duplicate = false;
+
+        // Scan the list we have built SO FAR (which contains "newer" keys)
         int scanner = head;
         while (scanner != -1) {
           Token existing_key = pool[scanner].token;
-          Token new_key = pool[key_idx].token;
+          Token current_key = pool[key_idx].token;
 
-          if (token_equals(existing_key, new_key)) {
-            // printf("Error: Duplicate key found: '%.*s'\n",
-            // (int)new_key.length,
-            //        new_key.start);
-            return false;
+          if (token_equals(existing_key, current_key)) {
+            is_duplicate = true;
+            break; // Found a match!
           }
 
-          // Move to next pair: Key -> Value -> NextKey
-          // 1. Get Value node
+          // Hop: Key -> Value -> Next Key
           int val_sibling = pool[scanner].next_sibling;
-          // 2. Get Next Key (which is the sibling of the Value)
           scanner = pool[val_sibling].next_sibling;
         }
         // --- DUPLICATE CHECK END ---
 
-        pool[key_idx].next_sibling = val_idx;
-        pool[val_idx].next_sibling = head;
-        head = key_idx;
+        if (is_duplicate) {
+          // CASE A: Duplicate Found
+          // Since we are popping in reverse, the one already in the list
+          // is the "Newer" value. The one we hold now is "Older".
+          // We discard the current "Older" pair.
+
+          pool[key_idx].type = AST_SKIPPED; // Mark Key as dead
+          pool[val_idx].type = AST_SKIPPED; // Mark Value as dead
+
+          // CRITICAL: Do NOT update 'head'.
+          // We effectively drop these nodes from the linked chain.
+        } else {
+          // CASE B: No Duplicate
+          // Link this pair into the list normally
+          pool[key_idx].next_sibling = val_idx;
+          pool[val_idx].next_sibling = head;
+          head = key_idx;
+        }
       }
+
       stack_pop(children); // Pop sentinel
       ((ASTNode *)nodes->data)[obj_idx].first_child = head;
       PUSH(children, obj_idx);
+      depth--;
       break;
     }
 
@@ -250,22 +290,25 @@ bool jsonv_ast(Lexer *lexer, Stack *nodes, Stack *children, Stack *controls) {
       int arr_idx = nodes->top;
       int head = -1;
 
-      while (children->top >= 0 &&
-             *(int *)stack_peek(children, children->top) != -1) {
+      while (*(int *)stack_peek(children, children->top) != ARRAY_SENTINEL) {
         int item_idx = *(int *)stack_pop(children);
 
         ASTNode *pool = (ASTNode *)nodes->data;
+        pool[item_idx].parent = arr_idx;
         pool[item_idx].next_sibling = head;
         head = item_idx;
       }
       stack_pop(children); // Pop sentinel
       ((ASTNode *)nodes->data)[arr_idx].first_child = head;
       PUSH(children, arr_idx);
+      depth--;
       break;
     }
     }
   }
-  return n.type == T_EOF;
+
+  if (n.type != T_EOF)
+    RAISE(MALFORMED_JSON);
   /*#endregion*/
 }
 
@@ -320,11 +363,130 @@ void print_ast(Stack *nodes, int index, int indent) {
     }
     break;
   }
+  case AST_SKIPPED:
+    return;
   }
 
   // 4. Print Next Sibling
   if (node->next_sibling != -1) {
     print_ast(nodes, node->next_sibling, indent);
   }
+  /*#endregion*/
+}
+
+// Helper: Find a child node by key in a JSON AST Object
+// Returns the index of the VALUE node, or -1 if not found.
+int jsonv_find_property(ASTNode *json_pool, int object_idx, const char *key) {
+  /*#region*/
+  ASTNode *obj = &json_pool[object_idx];
+  if (obj->type != AST_OBJECT)
+    return -1;
+
+  int curr = obj->first_child;
+  while (curr != -1) {
+    // In your AST: Key is 'curr', Value is 'next_sibling'
+    Token k = json_pool[curr].token;
+
+    // Simple string match
+    if (strncmp((char *)k.string.start, key, k.string.length) == 0 &&
+        strlen(key) == k.string.length) {
+      return json_pool[curr].next_sibling; // Return the Value
+    }
+
+    // Move to next pair (Value -> Next Key)
+    int val_idx = json_pool[curr].next_sibling;
+    curr = json_pool[val_idx].next_sibling;
+  }
+  return -1;
+  /*#endregion*/
+}
+
+static void recursive_path_builder(ASTNode *pool, int node_idx, char **cursor,
+                                   char *end) {
+  /*#region*/
+  if (node_idx == -1)
+    return;
+
+  // We assume ASTNode has a 'parent' field as requested
+  int p_idx = pool[node_idx].parent;
+
+  if (p_idx == -1) {
+    // Root
+    if (*cursor < end)
+      *(*cursor)++ = '$';
+    return;
+  }
+
+  // Recurse first to print parents (Root -> ... -> Parent)
+  recursive_path_builder(pool, p_idx, cursor, end);
+
+  // Print current segment (Parent -> Node)
+  ASTNode *p = &pool[p_idx];
+  if (p->type == AST_OBJECT) {
+    // Find the key corresponding to this value node
+    int k = p->first_child;
+    while (k != -1) {
+      int v = pool[k].next_sibling;
+      if (v == node_idx) {
+        int len = snprintf(*cursor, end - *cursor, ".%.*s",
+                           (int)pool[k].token.string.length,
+                           pool[k].token.string.start);
+        if (len > 0)
+          *cursor += len;
+        return;
+      }
+      k = pool[v].next_sibling;
+    }
+    // If node_idx is the key itself?
+    k = p->first_child;
+    while (k != -1) {
+      if (k == node_idx) {
+        // Error on key
+        int len = snprintf(*cursor, end - *cursor, ".%.*s",
+                           (int)pool[k].token.string.length,
+                           pool[k].token.string.start);
+        if (len > 0)
+          *cursor += len;
+        return;
+      }
+      k = pool[pool[k].next_sibling].next_sibling;
+    }
+
+  } else if (p->type == AST_ARRAY) {
+    int idx = 0;
+    int k = p->first_child;
+    while (k != -1) {
+      if (k == node_idx) {
+        int len = snprintf(*cursor, end - *cursor, "[%d]", idx);
+        if (len > 0)
+          *cursor += len;
+        return;
+      }
+      k = pool[k].next_sibling;
+      idx++;
+    }
+  }
+  /*#endregion*/
+}
+
+char *get_node_path(Stack *nodes, int node_idx) {
+  /*#region*/
+  if (node_idx == -1)
+    return NULL;
+  ASTNode *pool = (ASTNode *)nodes->data;
+
+  // Allocate buffer (simple static size or two-pass size calc).
+  // For simplicity/speed we use a reasonable fixed size.
+  char *buffer = malloc(2048);
+  if (!buffer)
+    return NULL;
+
+  char *cursor = buffer;
+  char *end = buffer + 2048;
+
+  recursive_path_builder(pool, node_idx, &cursor, end);
+  *cursor = '\0';
+
+  return buffer;
   /*#endregion*/
 }

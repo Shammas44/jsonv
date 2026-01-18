@@ -51,7 +51,7 @@ else ifeq ($(OPTION), dev)
 else ifeq ($(OPTION), test)
   CFLAGS := $(BASE_CFLAGS) -g -Wno-builtin-declaration-mismatch -Wno-implicit-function-declaration -fPIC
 else
-  CFLAGS := $(BASE_CFLAGS) -g -fPIC
+  CFLAGS := $(BASE_CFLAGS) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fPIC
 endif
 
 # --- Directories ---
@@ -193,12 +193,16 @@ run_d: $(MAIN_APP_DYNAMIC)
 	@$(MAIN_APP_DYNAMIC)
 
 run_test: $(TEST_APP)
-	@$(TEST_APP)
+	@MallocNanoZone=0 $(TEST_APP)
 
 run_fuzz: $(FUZZ_APP)
 	@mkdir -p output_fuzz local_seed_corpus
 	@echo "Starting AFL++ Fuzzing. Use Ctrl+C to stop."
 	@afl-fuzz -i seed_corpus -o output_fuzz -- $(FUZZ_APP) @@
+
+resume_fuzz: $(FUZZ_APP)
+	@echo "Resume AFL++ Fuzzing. Use Ctrl+C to stop."
+	@afl-fuzz -i - -o output_fuzz -- $(FUZZ_APP) @@
 
 run_docker_afl:
 	@echo "Start AFL++ in docker"
