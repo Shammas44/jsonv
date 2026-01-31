@@ -4,8 +4,8 @@
 #include <stdio.h>
 
 typedef struct {
-  int max_depth;
-  int cur_depth;
+  size_t max_depth;
+  size_t cur_depth;
   size_t value_count;
   size_t object_count;
   size_t array_count;

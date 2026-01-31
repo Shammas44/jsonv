@@ -4,7 +4,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-const Except Mem_Failed = {"Allocation failed"};
+const Except Mem_Failed = {"Allocation failed", Jsonv_Mem_Failed};
 
 void *mem_alloc(long nbytes, const char *file, int line) {
   /*#region*/

@@ -1,4 +1,5 @@
 #include "schema.h"
+#include <memd/memd.h>
 #include "assert.h"
 #include "ast.h"
 #include <stdio.h>
@@ -10,7 +11,7 @@ static double get_json_double(ASTNode *json_pool, int node_idx) {
   /*#region*/
   if (node_idx == -1)
     return 0.0;
-  return json_pool[node_idx].token.number;
+  return json_pool[node_idx].token.value.number;
   /*#endregion*/
 }
 
@@ -44,8 +45,8 @@ static void set_string_constraint(SchemaNode *n, int i, ASTNode *pool,
   /*#region*/
   n->constraints[i].type = T_STRING;
   Token t = get_json_token(pool, idx);
-  n->constraints[i].value.string.start = t.string.start;
-  n->constraints[i].value.string.length = t.string.length;
+  n->constraints[i].value.string.start = t.value.string.start;
+  n->constraints[i].value.string.length = t.value.string.length;
   /*#endregion*/
 }
 
@@ -117,7 +118,8 @@ static int new_schema_node(Stack *out, SchemaType type) {
   node.required_head = -1;
   node.items_head = -1;
   node.next_sibling = -1;
-
+  node.additional_schema_head = -1;
+  node.pattern_props_head = -1;
   stack_push(out, &node);
   return out->top;
   /*#endregion*/
@@ -125,19 +127,19 @@ static int new_schema_node(Stack *out, SchemaType type) {
 
 static SchemaType parse_type_string(Token t) {
   /*#region*/
-  if (strncmp((char *)t.string.start, "object", t.string.length) == 0)
+  if (strncmp((char *)t.value.string.start, "object", t.value.string.length) == 0)
     return SC_OBJECT;
-  if (strncmp((char *)t.string.start, "array", t.string.length) == 0)
+  if (strncmp((char *)t.value.string.start, "array", t.value.string.length) == 0)
     return SC_ARRAY;
-  if (strncmp((char *)t.string.start, "string", t.string.length) == 0)
+  if (strncmp((char *)t.value.string.start, "string", t.value.string.length) == 0)
     return SC_STRING;
-  if (strncmp((char *)t.string.start, "number", t.string.length) == 0)
+  if (strncmp((char *)t.value.string.start, "number", t.value.string.length) == 0)
     return SC_NUMBER;
-  if (strncmp((char *)t.string.start, "integer", t.string.length) == 0)
+  if (strncmp((char *)t.value.string.start, "integer", t.value.string.length) == 0)
     return SC_NUMBER;
-  if (strncmp((char *)t.string.start, "boolean", t.string.length) == 0)
+  if (strncmp((char *)t.value.string.start, "boolean", t.value.string.length) == 0)
     return SC_BOOLEAN;
-  if (strncmp((char *)t.string.start, "null", t.string.length) == 0)
+  if (strncmp((char *)t.value.string.start, "null", t.value.string.length) == 0)
     return SC_NULL;
   return SC_ANY;
   /*#endregion*/
@@ -188,6 +190,37 @@ static void schedule_properties(Stack *controls, ASTNode *json_pool,
 
   SchemaControl conn = {
       .cmd = SC_CMD_CONNECT_PROPS, .schema_idx = schema_idx, .count = count};
+  stack_push(controls, &conn);
+
+  curr = json_pool[json_props_idx].first_child;
+  while (curr != -1) {
+    int val_idx = json_pool[curr].next_sibling;
+    SchemaControl task = {.cmd = SC_CMD_BUILD_NODE,
+                          .json_idx = val_idx,
+                          .name_override = json_pool[curr].token};
+    stack_push(controls, &task);
+    curr = json_pool[val_idx].next_sibling;
+  }
+  /*#endregion*/
+}
+
+static void schedule_pattern_properties(Stack *controls, ASTNode *json_pool,
+                                        int json_props_idx, int schema_idx) {
+  /*#region*/
+  if (json_props_idx == -1 || json_pool[json_props_idx].type != AST_OBJECT)
+    return;
+
+  int count = 0;
+  int curr = json_pool[json_props_idx].first_child;
+  while (curr != -1) {
+    count++;
+    int val = json_pool[curr].next_sibling;
+    curr = json_pool[val].next_sibling;
+  }
+
+  SchemaControl conn = {.cmd = SC_CMD_CONNECT_PATTERN_PROPS,
+                        .schema_idx = schema_idx,
+                        .count = count};
   stack_push(controls, &conn);
 
   curr = json_pool[json_props_idx].first_child;
@@ -267,6 +300,11 @@ int parse_schema_stack(Stack *json, int json_root, Stack *schema,
             jsonv_find_property(json_pool, frame.json_idx, "properties");
         schedule_properties(controls, json_pool, props_idx, sc_idx);
 
+        // patternProperties
+        int pat_props_idx =
+            jsonv_find_property(json_pool, frame.json_idx, "patternProperties");
+        schedule_pattern_properties(controls, json_pool, pat_props_idx, sc_idx);
+
         // Required
         int req_idx =
             jsonv_find_property(json_pool, frame.json_idx, "required");
@@ -276,7 +314,7 @@ int parse_schema_stack(Stack *json, int json_root, Stack *schema,
         int add_idx = jsonv_find_property(json_pool, frame.json_idx,
                                           "additionalProperties");
         if (add_idx != -1) {
-          SchemaControl conn = {.cmd = SC_CMD_CONNECT_ADDITIONAL,
+          SchemaControl conn = {.cmd = SC_CMD_CONNECT_ADDITIONAL_PROPS,
                                 .schema_idx = sc_idx};
           stack_push(controls, &conn);
           SchemaControl build = {.cmd = SC_CMD_BUILD_NODE, .json_idx = add_idx};
@@ -320,6 +358,20 @@ int parse_schema_stack(Stack *json, int json_root, Stack *schema,
       break;
     }
 
+    case SC_CMD_CONNECT_PATTERN_PROPS: {
+      int head = -1, prev = -1;
+      for (int i = 0; i < frame.count; i++) {
+        int child = *(int *)stack_pop(results);
+        if (head == -1)
+          head = child;
+        else
+          SCH_NODE_FROM_STACK(schema, prev)->next_sibling = child;
+        prev = child;
+      }
+      SCH_NODE_FROM_STACK(schema, frame.schema_idx)->pattern_props_head = head;
+      break;
+    }
+
     case SC_CMD_CONNECT_REQUIRED: {
       int head = -1, prev = -1;
       for (int i = 0; i < frame.count; i++) {
@@ -340,9 +392,10 @@ int parse_schema_stack(Stack *json, int json_root, Stack *schema,
       break;
     }
 
-    case SC_CMD_CONNECT_ADDITIONAL: {
+    case SC_CMD_CONNECT_ADDITIONAL_PROPS: {
       int child = *(int *)stack_pop(results);
-      SCH_NODE_FROM_STACK(schema, frame.schema_idx)->additional_schema = child;
+      SCH_NODE_FROM_STACK(schema, frame.schema_idx)->additional_schema_head =
+          child;
       break;
     }
 
@@ -357,29 +410,39 @@ int parse_schema_stack(Stack *json, int json_root, Stack *schema,
   /*#endregion*/
 }
 
-void print_schema(Stack *out, int sc_idx, int indent) {
+// --- PRINTER IMPLEMENTATION ---
+
+void print_schema_internal(Stack *out, int sc_idx, int indent, bool traverse_siblings) {
   /*#region*/
   if (sc_idx == -1)
     return;
+    
   SchemaNode *node = SCH_NODE_FROM_STACK(out, sc_idx);
 
+  // 1. Print Indentation
   for (int i = 0; i < indent; i++)
     printf("  ");
 
-  if (node->name.string.length > 0)
-    printf("Property '%.*s': ", (int)node->name.string.length,
-           node->name.string.start);
+  // 2. Print Name/Type
+  if (node->name.value.string.length > 0)
+    printf("Property '%.*s': ", (int)node->name.value.string.length,
+           node->name.value.string.start);
   else
     printf("Schema: ");
 
   const char *type_names[] = {"ANY",  "FALSE",  "STRING", "NUMBER", "BOOL",
                               "NULL", "OBJECT", "ARRAY",  "REQ"};
-  printf("%s", type_names[node->type]);
+  
+  if (node->type >= 0 && node->type < 9)
+      printf("%s", type_names[node->type]);
+  else
+      printf("UNKNOWN(%d)", node->type);
 
-  // Print Constraints
+  // 3. Print Constraints
   for (int i = 0; i < node->constraints_count; i++) {
     Constraint *c = &node->constraints[i];
     printf(" [%.*s: ", (int)c->name.length, c->name.start);
+    
     if (c->type == T_NUMBER)
       printf("%.2f]", c->value.number);
     else if (c->type == T_STRING)
@@ -391,7 +454,9 @@ void print_schema(Stack *out, int sc_idx, int indent) {
   }
   printf("\n");
 
+  // 4. Handle Object Children
   if (node->type == SC_OBJECT) {
+    // Print Required Fields
     if (node->required_head != -1) {
       for (int i = 0; i < indent + 1; i++)
         printf("  ");
@@ -399,24 +464,47 @@ void print_schema(Stack *out, int sc_idx, int indent) {
       int curr = node->required_head;
       while (curr != -1) {
         Token t = SCH_NODE_FROM_STACK(out, curr)->name;
-        printf("%.*s ", (int)t.string.length, t.string.start);
+        printf("%.*s ", (int)t.value.string.length, t.value.string.start);
         curr = SCH_NODE_FROM_STACK(out, curr)->next_sibling;
       }
       printf("]\n");
     }
-    print_schema(out, node->props_head, indent + 1);
-    if (node->additional_schema != -1) {
+
+    // Recurse on Properties
+    print_schema_internal(out, node->props_head, indent + 1, true);
+
+    // NEW: Recurse on Pattern Properties
+    if (node->pattern_props_head != -1) {
+        for (int i = 0; i < indent + 1; i++) printf("  ");
+        printf("PatternProperties:\n");
+        // We traverse siblings because patternProperties is a map (list of nodes)
+        print_schema_internal(out, node->pattern_props_head, indent + 2, true);
+    }
+
+    // Recurse on Additional Properties
+    if (node->additional_schema_head != -1) {
       for (int i = 0; i < indent + 1; i++)
         printf("  ");
       printf("AdditionalProperties:\n");
-      print_schema(out, node->additional_schema, indent + 2);
+      
+      // Pass 'false' to avoid printing siblings for additionalSchema
+      print_schema_internal(out, node->additional_schema_head, indent + 2, false);
     }
-  } else if (node->type == SC_ARRAY) {
-    print_schema(out, node->items_head, indent + 1);
+  } 
+  // 5. Handle Array Children
+  else if (node->type == SC_ARRAY) {
+    print_schema_internal(out, node->items_head, indent + 1, true);
   }
 
-  if (node->next_sibling != -1) {
-    print_schema(out, node->next_sibling, indent);
+  // 6. Handle Siblings (Recursion)
+  if (traverse_siblings && node->next_sibling != -1) {
+    print_schema_internal(out, node->next_sibling, indent, true);
   }
   /*#endregion*/
+}
+
+void print_schema(Stack *out, int sc_idx, int indent) {
+    /*#region*/
+    print_schema_internal(out, sc_idx, indent, true);
+    /*#endregion*/
 }

@@ -13,6 +13,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#define KB(x) 1024 * x
+#define MB(x) 1024 * 1024 * x
+
 static char *colors[] = {
     "\x1b[30m", "\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[34m",
     "\x1b[35m", "\x1b[36m", "\x1b[37m", "\x1b[0m",
@@ -107,22 +110,22 @@ static void event_log(Keys key, const char *format, ...) {
 
 static void print_error(Jsonv_Context *ctx) {
   /*#region*/
-  Jsonv_error_stack *errors = jsonv_ctx_errors(ctx);
-  for (size_t i = 0; i < errors->count; i++) {
-    event_log(Yellow, "Error %d: %s", i + 1, errors->messages[i]);
-  }
+  E *error = jsonv_ctx_error(ctx);
+  char *path = error->path ? error->path : "";
+  event_log(Yellow, "Error %d: %s %s", error->type, error->description, path);
   /*#endregion*/
 }
 
 static bool logic(unsigned char *data, unsigned char *schema,
                   Jsonv_Context **ctx, Arena *arena) {
   /*#region*/
-  bool e = jsonv_ctx_prepare_schema(ctx, schema, arena);
+  bool e = jsonv_ctx_init(ctx, arena, NULL);
   if (e)
-    e = jsonv_ctx_prepare_data(ctx, data, arena);
+    e = jsonv_ctx_prepare_schema(ctx, schema);
+  if (e)
+    e = jsonv_ctx_prepare_data(ctx, data);
   if (e)
     e = jsonv_ctx_validate(*ctx);
-
   return e;
   /*#endregion*/
 }
@@ -184,7 +187,7 @@ void single_payload(unsigned char *payload, unsigned char *schema,
   if (e) {
     event_log(Green, "Succes: %s", "Payload parsed.");
     jsonv_ctx_print_data(ctx);
-    // jsonv_ctx_print_schema(ctx);
+    jsonv_ctx_print_schema(ctx);
   } else {
     print_error(ctx);
   }
@@ -198,17 +201,18 @@ int main() {
   uint64_t start = now_ns();
   // for (int i = 0; i < 1000; i++) {
   // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold
-  Arena *arena = arena_create(4096, 1024 * 1024, 3 * 4096);
+  Arena *arena = arena_new(KB(4), MB(1), KB(12));
   size_t size;
   unsigned char *schema = file_read("./schema2.json", &size);
 
   char data[] = "{"
-                "\"name\": \"aaaaaaa\","
+                "\"name\": \"iphone4\","
                 "\"price\": 2,"
                 "\"description\": {"
-                "   \"name\": \"cool\","
+                "   \"forbidden\": \"test\","
+                "   \"name\": \"test\","
                 "   \"prices\": ["
-                "       2, \"truc\""
+                "       2, 2"
                 "     ]"
                 "   }"
                 "}";

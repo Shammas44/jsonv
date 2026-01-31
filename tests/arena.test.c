@@ -15,7 +15,7 @@ Arena *arena = NULL;
 
 void setup(void) {
   // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold
-  arena = arena_create(4096, 1024 * 1024, 3 * 4096);
+  arena = arena_new(4096, 1024 * 1024, 3 * 4096);
 }
 
 void teardown(void) {
@@ -92,7 +92,7 @@ Test(arena, memory_limit_enforcement, .init = setup, .fini = teardown) {
   arena_destroy(arena);
 
   // Limit: 5000 bytes. Default Block: 1000 bytes.
-  arena = arena_create(1000, 5000, 5000);
+  arena = arena_new(1000, 5000, 5000);
 
   // Consume ~4000 bytes (struct overhead will eat some logic space)
   // Roughly 4 blocks

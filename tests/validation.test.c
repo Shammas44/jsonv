@@ -12,7 +12,7 @@ static Jsonv_Context *ctx = NULL;
 static void setup(char *file) {
   /*#region*/
   // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold
-  a = arena_create(4096, 1024 * 1024, 3 * 4096);
+  a = arena_new(4096, 1024 * 1024, 3 * 4096);
   size_t size;
   char buff[100] = {0};
   snprintf(buff, 50, "./tests/schemas/%s.schema.json", file);
@@ -42,6 +42,14 @@ static bool validate(unsigned char *payload) {
   /*#endregion*/
 }
 
+static void check_error(Jsonv_Except_Type type) {
+  /*#region*/
+  E *error = jsonv_ctx_error(ctx);
+  cr_assert_not_null(error);
+  cr_assert_eq(error->type, type);
+  /*#endregion*/
+}
+
 #define T1 multipleOf
 static void multipleOf_init() { setup(STR(T1, .2)); }
 #define T2 maximum
@@ -61,6 +69,7 @@ Test(T1, multipleOf_2) {
   cr_assert(validate((unsigned char *)c1));
   char c2[] = "{ \"value\": 3 }";
   cr_assert(!validate((unsigned char *)c2));
+  check_error(Jsonv_MultipleOf_error);
   /*#endregion*/
 }
 
@@ -72,6 +81,7 @@ Test(T2, maximum_2) {
   cr_assert(validate((unsigned char *)c1));
   char c2[] = "{ \"value\": 3 }";
   cr_assert(!validate((unsigned char *)c2));
+  check_error(Jsonv_Maximum_error);
   /*#endregion*/
 }
 
@@ -83,6 +93,7 @@ Test(T3, minimum_2) {
   cr_assert(validate((unsigned char *)c1));
   char c2[] = "{ \"value\": 1 }";
   cr_assert(!validate((unsigned char *)c2));
+  check_error(Jsonv_Minimum_error);
   /*#endregion*/
 }
 
@@ -94,6 +105,7 @@ Test(T4, exclusiveMinimum_2) {
   cr_assert(validate((unsigned char *)c1));
   char c2[] = "{ \"value\": 2 }";
   cr_assert(!validate((unsigned char *)c2));
+  check_error(Jsonv_ExclusiveMinimum_error);
   /*#endregion*/
 }
 
@@ -105,5 +117,6 @@ Test(T5, exclusiveMaximum_2) {
   cr_assert(validate((unsigned char *)c1));
   char c2[] = "{ \"value\": 2 }";
   cr_assert(!validate((unsigned char *)c2));
+  check_error(Jsonv_ExclusiveMaximum_error);
   /*#endregion*/
 }

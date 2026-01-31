@@ -22,17 +22,17 @@ typedef enum {
   T_FALSE,
 } TokenType;
 
-typedef struct {
-  TokenType type;
-  union {
+  typedef union {
     double number;
     struct {
-      // Pointers to the start and end of the token in the source string.
-      // This avoids copying the token value until needed.
       const unsigned char *start;
       size_t length;
     } string;
-  };
+  } TokenValue;
+
+typedef struct {
+  TokenValue value;
+  TokenType type;
 } Token;
 
 #endif

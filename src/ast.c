@@ -30,6 +30,9 @@ typedef enum {
 } RuleType;
 
 static ASTNode new_node(ASTNodeType type, Token t);
+static bool token_equals(Token a, Token b);
+static void recursive_path_builder(ASTNode *pool, int node_idx, char **cursor,
+                                   char *end);
 
 extern const Except MALFORMED_JSON;
 extern const Except MAXIMUM_NESTED_DEPTH_REACHED;
@@ -38,51 +41,13 @@ static bool token_equals(Token a, Token b) {
   /*#region*/
   assert(a.type == T_STRING);
   assert(b.type == T_STRING);
-  if (a.string.length != b.string.length)
+  if (a.value.string.length != b.value.string.length)
     return false;
   // Both are empty? Consider them equal (or unequal depending on your needs)
-  if (a.string.length == 0)
+  if (a.value.string.length == 0)
     return true;
   // Compare bytes (Token start is not guaranteed to be null-terminated)
-  return memcmp(a.string.start, b.string.start, a.string.length) == 0;
-  /*#endregion*/
-}
-
-void print_token(TokenType type) {
-  /*#region*/
-  static const char *names[] = {
-      [T_BRACE_OPEN] = "T_BRACE_OPEN",
-      [T_BRACE_CLOSE] = "T_BRACE_CLOSE",
-      [T_BRACKET_OPEN] = "T_BRACKET_OPEN",
-      [T_BRACKET_CLOSE] = "T_BRACKET_CLOSE",
-      [T_STRING] = "T_STRING",
-      [T_NUMBER] = "T_NUMBER",
-      [T_NULL] = "T_NULL",
-      [T_TRUE] = "T_TRUE",
-      [T_FALSE] = "T_FALSE",
-      [T_COLON] = "T_COLON",
-      [T_COMMA] = "T_COMMA",
-      [T_EOF] = "T_EOF",
-      [T_ERROR] = "T_ERROR",
-
-      [RULE_JSON] = "RULE_JSON",
-      [RULE_VALUE] = "RULE_VALUE",
-      [RULE_OBJECT] = "RULE_OBJECT",
-      [RULE_MEMBERS] = "RULE_MEMBERS",
-      [RULE_PAIR] = "RULE_PAIR",
-      [RULE_ARRAY] = "RULE_ARRAY",
-      [RULE_ELEMENTS] = "RULE_ELEMENTS",
-      [RULE_NEXT_MEMBER] = "RULE_NEXT_MEMBER",
-      [RULE_NEXT_ELEMENT] = "RULE_NEXT_ELEMENT",
-
-      [MARK_OBJECT_END] = "MARK_OBJECT_END",
-      [MARK_ARRAY_END] = "MARK_ARRAY_END",
-  };
-
-  if ((unsigned)type < sizeof(names) / sizeof(names[0]) && names[type])
-    puts(names[type]);
-  else
-    puts("UNKNOWN_TOKEN");
+  return memcmp(a.value.string.start, b.value.string.start, a.value.string.length) == 0;
   /*#endregion*/
 }
 
@@ -95,6 +60,74 @@ static ASTNode new_node(ASTNodeType type, Token t) {
   node.next_sibling = -1;
   node.parent = -1;
   return node;
+  /*#endregion*/
+}
+
+static void recursive_path_builder(ASTNode *pool, int node_idx, char **cursor,
+                                   char *end) {
+  /*#region*/
+  if (node_idx == -1)
+    return;
+
+  // We assume ASTNode has a 'parent' field as requested
+  int p_idx = pool[node_idx].parent;
+
+  if (p_idx == -1) {
+    // Root
+    if (*cursor < end)
+      *(*cursor)++ = '$';
+    return;
+  }
+
+  // Recurse first to print parents (Root -> ... -> Parent)
+  recursive_path_builder(pool, p_idx, cursor, end);
+
+  // Print current segment (Parent -> Node)
+  ASTNode *p = &pool[p_idx];
+  if (p->type == AST_OBJECT) {
+    // Find the key corresponding to this value node
+    int k = p->first_child;
+    while (k != -1) {
+      int v = pool[k].next_sibling;
+      if (v == node_idx) {
+        int len = snprintf(*cursor, end - *cursor, ".%.*s",
+                           (int)pool[k].token.value.string.length,
+                           pool[k].token.value.string.start);
+        if (len > 0)
+          *cursor += len;
+        return;
+      }
+      k = pool[v].next_sibling;
+    }
+    // If node_idx is the key itself?
+    k = p->first_child;
+    while (k != -1) {
+      if (k == node_idx) {
+        // Error on key
+        int len = snprintf(*cursor, end - *cursor, ".%.*s",
+                           (int)pool[k].token.value.string.length,
+                           pool[k].token.value.string.start);
+        if (len > 0)
+          *cursor += len;
+        return;
+      }
+      k = pool[pool[k].next_sibling].next_sibling;
+    }
+
+  } else if (p->type == AST_ARRAY) {
+    int idx = 0;
+    int k = p->first_child;
+    while (k != -1) {
+      if (k == node_idx) {
+        int len = snprintf(*cursor, end - *cursor, "[%d]", idx);
+        if (len > 0)
+          *cursor += len;
+        return;
+      }
+      k = pool[k].next_sibling;
+      idx++;
+    }
+  }
   /*#endregion*/
 }
 
@@ -346,7 +379,7 @@ void print_ast(Stack *nodes, int index, int indent) {
   case AST_LEAF: {
     switch (node->token.type) {
     case T_NUMBER:
-      printf("LEAF: %f\n", node->token.number);
+      printf("LEAF: %f\n", node->token.value.number);
       break;
     case T_NULL:
       printf("LEAF: null\n");
@@ -358,8 +391,8 @@ void print_ast(Stack *nodes, int index, int indent) {
       printf("LEAF: false\n");
       break;
     default:
-      printf("LEAF: %.*s\n", (int)node->token.string.length,
-             node->token.string.start);
+      printf("LEAF: %.*s\n", (int)node->token.value.string.length,
+             node->token.value.string.start);
     }
     break;
   }
@@ -388,8 +421,8 @@ int jsonv_find_property(ASTNode *json_pool, int object_idx, const char *key) {
     Token k = json_pool[curr].token;
 
     // Simple string match
-    if (strncmp((char *)k.string.start, key, k.string.length) == 0 &&
-        strlen(key) == k.string.length) {
+    if (strncmp((char *)k.value.string.start, key, k.value.string.length) == 0 &&
+        strlen(key) == k.value.string.length) {
       return json_pool[curr].next_sibling; // Return the Value
     }
 
@@ -401,92 +434,63 @@ int jsonv_find_property(ASTNode *json_pool, int object_idx, const char *key) {
   /*#endregion*/
 }
 
-static void recursive_path_builder(ASTNode *pool, int node_idx, char **cursor,
-                                   char *end) {
+char *get_node_path(Stack *nodes, int node_idx, size_t size) {
   /*#region*/
-  if (node_idx == -1)
-    return;
-
-  // We assume ASTNode has a 'parent' field as requested
-  int p_idx = pool[node_idx].parent;
-
-  if (p_idx == -1) {
-    // Root
-    if (*cursor < end)
-      *(*cursor)++ = '$';
-    return;
-  }
-
-  // Recurse first to print parents (Root -> ... -> Parent)
-  recursive_path_builder(pool, p_idx, cursor, end);
-
-  // Print current segment (Parent -> Node)
-  ASTNode *p = &pool[p_idx];
-  if (p->type == AST_OBJECT) {
-    // Find the key corresponding to this value node
-    int k = p->first_child;
-    while (k != -1) {
-      int v = pool[k].next_sibling;
-      if (v == node_idx) {
-        int len = snprintf(*cursor, end - *cursor, ".%.*s",
-                           (int)pool[k].token.string.length,
-                           pool[k].token.string.start);
-        if (len > 0)
-          *cursor += len;
-        return;
-      }
-      k = pool[v].next_sibling;
-    }
-    // If node_idx is the key itself?
-    k = p->first_child;
-    while (k != -1) {
-      if (k == node_idx) {
-        // Error on key
-        int len = snprintf(*cursor, end - *cursor, ".%.*s",
-                           (int)pool[k].token.string.length,
-                           pool[k].token.string.start);
-        if (len > 0)
-          *cursor += len;
-        return;
-      }
-      k = pool[pool[k].next_sibling].next_sibling;
-    }
-
-  } else if (p->type == AST_ARRAY) {
-    int idx = 0;
-    int k = p->first_child;
-    while (k != -1) {
-      if (k == node_idx) {
-        int len = snprintf(*cursor, end - *cursor, "[%d]", idx);
-        if (len > 0)
-          *cursor += len;
-        return;
-      }
-      k = pool[k].next_sibling;
-      idx++;
-    }
-  }
-  /*#endregion*/
-}
-
-char *get_node_path(Stack *nodes, int node_idx) {
-  /*#region*/
+  assert(size > 0);
   if (node_idx == -1)
     return NULL;
   ASTNode *pool = (ASTNode *)nodes->data;
 
   // Allocate buffer (simple static size or two-pass size calc).
   // For simplicity/speed we use a reasonable fixed size.
-  char *buffer = malloc(2048);
+  char *buffer = malloc(size);
   if (!buffer)
     return NULL;
 
   char *cursor = buffer;
-  char *end = buffer + 2048;
+  char *end = buffer + size;
 
   recursive_path_builder(pool, node_idx, &cursor, end);
   *cursor = '\0';
 
   return buffer;
+  /*#endregion*/
+}
+
+void print_token(TokenType type) {
+  /*#region*/
+  static const char *names[] = {
+      [T_BRACE_OPEN] = "T_BRACE_OPEN",
+      [T_BRACE_CLOSE] = "T_BRACE_CLOSE",
+      [T_BRACKET_OPEN] = "T_BRACKET_OPEN",
+      [T_BRACKET_CLOSE] = "T_BRACKET_CLOSE",
+      [T_STRING] = "T_STRING",
+      [T_NUMBER] = "T_NUMBER",
+      [T_NULL] = "T_NULL",
+      [T_TRUE] = "T_TRUE",
+      [T_FALSE] = "T_FALSE",
+      [T_COLON] = "T_COLON",
+      [T_COMMA] = "T_COMMA",
+      [T_EOF] = "T_EOF",
+      [T_ERROR] = "T_ERROR",
+
+      [RULE_JSON] = "RULE_JSON",
+      [RULE_VALUE] = "RULE_VALUE",
+      [RULE_OBJECT] = "RULE_OBJECT",
+      [RULE_MEMBERS] = "RULE_MEMBERS",
+      [RULE_PAIR] = "RULE_PAIR",
+      [RULE_ARRAY] = "RULE_ARRAY",
+      [RULE_ELEMENTS] = "RULE_ELEMENTS",
+      [RULE_NEXT_MEMBER] = "RULE_NEXT_MEMBER",
+      [RULE_NEXT_ELEMENT] = "RULE_NEXT_ELEMENT",
+
+      [MARK_OBJECT_END] = "MARK_OBJECT_END",
+      [MARK_ARRAY_END] = "MARK_ARRAY_END",
+  };
+
+  if ((unsigned)type < sizeof(names) / sizeof(names[0]) && names[type])
+    puts(names[type]);
+  else
+    puts("UNKNOWN_TOKEN");
   /*#endregion*/
 }

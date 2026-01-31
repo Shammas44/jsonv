@@ -7,10 +7,13 @@
 extern const Except ARENA_LIMIT_REACHED;
 
 static size_t align_up(size_t size) {
+  /*#region*/
   return (size + (ARENA_ALIGNMENT - 1)) & ~(ARENA_ALIGNMENT - 1);
+  /*#endregion*/
 }
 
 static ArenaBlock *arena_create_block(size_t capacity) {
+  /*#region*/
   ArenaBlock *block = ALLOC(sizeof(ArenaBlock) + capacity);
   if (block) {
     block->next = NULL;
@@ -18,10 +21,12 @@ static ArenaBlock *arena_create_block(size_t capacity) {
     block->used = 0;
   }
   return block;
+  /*#endregion*/
 }
 
-Arena *arena_create(size_t default_block_size, size_t max_limit,
-                    size_t shrink_at) {
+Arena *arena_new(size_t default_block_size, size_t max_limit,
+                 size_t shrink_at) {
+  /*#region*/
   Arena *arena = ALLOC(sizeof(Arena));
   if (!arena)
     return NULL;
@@ -46,9 +51,11 @@ Arena *arena_create(size_t default_block_size, size_t max_limit,
   arena->current = arena->head;
   arena->total_reserved = first_block_size;
   return arena;
+  /*#endregion*/
 }
 
 void *arena_alloc(Arena *arena, size_t size) {
+  /*#region*/
   size_t aligned_size = align_up(size);
 
   // 1. Try current block
@@ -108,9 +115,11 @@ void *arena_alloc(Arena *arena, size_t size) {
   void *ptr = arena->current->data;
   arena->current->used = aligned_size;
   return ptr;
+  /*#endregion*/
 }
 
 void arena_reset(Arena *arena) {
+  /*#region*/
   // SMART TRIM LOGIC
   if (arena->total_reserved > arena->shrink_at) {
     // 1. Keep the HEAD, free the rest
@@ -137,9 +146,11 @@ void arena_reset(Arena *arena) {
   // 3. Reset pointer to start
   arena->head->used = 0;
   arena->current = arena->head;
+  /*#endregion*/
 }
 
 void arena_destroy(Arena *arena) {
+  /*#region*/
   ArenaBlock *block = arena->head;
   while (block) {
     ArenaBlock *next = block->next;
@@ -147,4 +158,5 @@ void arena_destroy(Arena *arena) {
     block = next;
   }
   free(arena);
+  /*#endregion*/
 }

@@ -52,24 +52,4 @@ void jsonv_error_print(const Jsonv_error_stack *s);
 #define JSONV_ENTER_INDEX(path, idx) jsonv_path_push_index((path), idx)
 #define JSONV_LEAVE(path) jsonv_path_pop((path))
 
-typedef enum {
-  // number
-  Jsonv_Maximum_error,
-  Jsonv_Minimum_error,
-  Jsonv_MultipleOf_error,
-  Jsonv_ExclusiveMaximum_error,
-  Jsonv_ExclusiveMinimum_error,
-  // string
-  Jsonv_MaxLength_error,
-  Jsonv_MinLength_error,
-  // object
-  Jsonv_Type_error,
-  Jsonv_AdditionalProperties_error,
-  // array
-  Jsonv_MinItems_error,
-  Jsonv_Required_error,
-  // else
-  Jsonv_ValueNotAllowed_error,
-} Jsonv_Error_Type;
-
 #endif

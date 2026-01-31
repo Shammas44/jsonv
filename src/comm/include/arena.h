@@ -32,7 +32,7 @@ typedef struct {
  * @param shrink_at          If memory exceeds this, free excess on reset
  * (Optimization)
  */
-Arena *arena_create(size_t default_block_size, size_t max_limit,
+Arena *arena_new(size_t default_block_size, size_t max_limit,
                     size_t shrink_at);
 void *arena_alloc(Arena *arena, size_t size);
 void arena_reset(Arena *arena);

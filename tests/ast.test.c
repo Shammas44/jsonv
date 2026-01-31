@@ -1,4 +1,5 @@
 #include "ast.h"
+#include "except.h"
 #include <criterion/criterion.h>
 
 #define L Lexer
@@ -22,7 +23,12 @@ static bool run_scenario(Stack *ast, unsigned char *input) {
   unsigned char children_storage[1000] = {0};
   stack_init(&children, sizeof(int), children_storage,
              sizeof(children_storage));
-  return jsonv_ast(l, ast, &control, &children);
+
+  bool out = true;
+  TRY { jsonv_ast(l, ast, &control, &children); }
+  ELSE { out = false; }
+  END_TRY;
+  return out;
   /*#endregion*/
 }
 

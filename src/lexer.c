@@ -67,8 +67,11 @@ static Token parse_string(Lexer *l, const unsigned char *token_start) {
 
     if (c == '"') {
       l->current_pos++; // Consume closing quote
-      return (Token){T_STRING, .string = {token_start + 1,
-                                          l->current_pos - start_pos - 1}};
+      return (Token){
+          .value = {.string = {token_start + 1,
+                               l->current_pos - start_pos - 1}},
+          T_STRING,
+      };
     }
 
     if (c == '\\') {
@@ -92,9 +95,12 @@ static Token parse_string(Lexer *l, const unsigned char *token_start) {
                 is_hex_digit(l->source[l->current_pos])) {
               l->current_pos++;
             } else {
-              return (Token){T_ERROR, .string = {token_start,
-                                                 l->current_pos - (token_start -
-                                                                   l->source)}};
+              return (Token){
+                  .value = {.string = {token_start,
+                                       l->current_pos -
+                                           (token_start - l->source)}},
+                  T_ERROR,
+              };
             }
           }
           continue;
@@ -102,23 +108,29 @@ static Token parse_string(Lexer *l, const unsigned char *token_start) {
       }
 
       return (Token){
+          .value = {.string = {token_start,
+                               l->current_pos - (token_start - l->source)}},
           T_ERROR,
-          .string = {token_start, l->current_pos - (token_start - l->source)}};
+      };
     }
 
     // 3. Check for control characters using the unsigned value
     // Emojis (e.g., 0xF0) are now > 32, so they pass this check.
     if (c < 32) {
       return (Token){
-          T_ERROR,
-          .string = {token_start, l->current_pos - (token_start - l->source)}};
+          .value = {.string = {token_start,
+                               l->current_pos - (token_start - l->source)}},
+          T_ERROR};
     }
 
     l->current_pos++;
   }
 
-  return (Token){T_ERROR, .string = {token_start, l->source_len - (token_start -
-                                                                   l->source)}};
+  return (Token){
+      .value = {.string = {token_start,
+                           l->source_len - (token_start - l->source)}},
+      T_ERROR,
+  };
   /*#endregion*/
 }
 
@@ -129,23 +141,29 @@ static Token parse_literal(T *l, const unsigned char *token_start) {
   if (token_start[0] == 't' && l->current_pos + 3 <= l->source_len &&
       strncmp((char *)l->source + l->current_pos, "rue", 3) == 0) {
     l->current_pos += 3;
-    return (Token){T_TRUE, {0}}; // "true"
+    return (Token){
+        {0},
+        T_TRUE,
+    }; // "true"
   }
 
   if (token_start[0] == 'f' && l->current_pos + 4 <= l->source_len &&
       strncmp((char *)l->source + l->current_pos, "alse", 4) == 0) {
     l->current_pos += 4;
-    return (Token){T_FALSE, {0}}; // "false"
+    return (Token){{0}, T_FALSE}; // "false"
   }
 
   if (token_start[0] == 'n' && l->current_pos + 3 <= l->source_len &&
       strncmp((char *)l->source + l->current_pos, "ull", 3) == 0) {
     l->current_pos += 3;
-    return (Token){T_NULL, {0}}; // "null"
+    return (Token){{0}, T_NULL}; // "null"
   }
 
   // If it started with t, f, or n but wasn't a recognized literal
-  return (Token){T_ERROR, .string = {token_start, 1}};
+  return (Token){
+      .value = {.string = {token_start, 1}},
+      T_ERROR,
+  };
   /*#endregion*/
 }
 
@@ -161,8 +179,9 @@ static Token parse_number(Lexer *l, const unsigned char *token_start) {
     // (A standalone '.' is usually a different token, not a number)
     if (l->current_pos >= l->source_len ||
         !is_digit(l->source[l->current_pos])) {
-      return (Token){T_ERROR,
-                     .string = {(const unsigned char *)token_start, 1}};
+      return (Token){
+          .value = {.string = {(const unsigned char *)token_start, 1}},
+          T_ERROR};
     }
 
     // Consume the digits (these are the fractional part)
@@ -176,8 +195,9 @@ static Token parse_number(Lexer *l, const unsigned char *token_start) {
     // 1a. Sign Check
     if (token_start[0] == '-' || token_start[0] == '+') {
       if (!is_digit(l->source[l->current_pos])) {
-        return (Token){T_ERROR,
-                       .string = {(const unsigned char *)token_start, 1}};
+        return (Token){
+            .value = {.string = {(const unsigned char *)token_start, 1}},
+            T_ERROR};
       }
     }
 
@@ -192,8 +212,9 @@ static Token parse_number(Lexer *l, const unsigned char *token_start) {
       l->current_pos++; // Consume '.'
       if (l->current_pos >= l->source_len ||
           !is_digit(l->source[l->current_pos])) {
-        return (Token){T_ERROR, .string = {(const unsigned char *)token_start,
-                                           l->current_pos - start_pos}};
+        return (Token){.value = {.string = {(const unsigned char *)token_start,
+                                            l->current_pos - start_pos}},
+                       T_ERROR};
       }
       while (l->current_pos < l->source_len &&
              is_digit(l->source[l->current_pos])) {
@@ -212,8 +233,11 @@ static Token parse_number(Lexer *l, const unsigned char *token_start) {
 
     if (l->current_pos >= l->source_len ||
         !is_digit(l->source[l->current_pos])) {
-      return (Token){T_ERROR, .string = {(const unsigned char *)token_start,
-                                         l->current_pos - start_pos}};
+      return (Token){
+          .value = {.string = {(const unsigned char *)token_start,
+                               l->current_pos - start_pos}},
+          T_ERROR,
+      };
     }
     while (l->current_pos < l->source_len &&
            is_digit(l->source[l->current_pos])) {
@@ -243,7 +267,10 @@ static Token parse_number(Lexer *l, const unsigned char *token_start) {
     value = 0.0;
   }
 
-  return (Token){T_NUMBER, .number = value};
+  return (Token){
+      .value = {.number = value},
+      T_NUMBER,
+  };
   /*#endregion*/
 }
 
@@ -252,7 +279,10 @@ Token lexer_next_token(T *l) {
   skip_whitespace(l);
 
   if (l->current_pos >= l->source_len) {
-    return (Token){T_EOF, {0}};
+    return (Token){
+        {0},
+        T_EOF,
+    };
   }
 
   const unsigned char *token_start = l->source + l->current_pos;
@@ -262,17 +292,17 @@ Token lexer_next_token(T *l) {
   switch (c) {
   // Structural Tokens
   case '{':
-    return (Token){T_BRACE_OPEN, .string = {token_start, 1}};
+    return (Token){.value = {.string = {token_start, 1}}, T_BRACE_OPEN};
   case '}':
-    return (Token){T_BRACE_CLOSE, .string = {token_start, 1}};
+    return (Token){.value = {.string = {token_start, 1}}, T_BRACE_CLOSE};
   case '[':
-    return (Token){T_BRACKET_OPEN, .string = {token_start, 1}};
+    return (Token){.value = {.string = {token_start, 1}}, T_BRACKET_OPEN};
   case ']':
-    return (Token){T_BRACKET_CLOSE, .string = {token_start, 1}};
+    return (Token){.value = {.string = {token_start, 1}}, T_BRACKET_CLOSE};
   case ':':
-    return (Token){T_COLON, .string = {token_start, 1}};
+    return (Token){.value = {.string = {token_start, 1}}, T_COLON};
   case ',':
-    return (Token){T_COMMA, .string = {token_start, 1}};
+    return (Token){.value = {.string = {token_start, 1}}, T_COMMA};
 
   // Literal Tokens
   case '"':
@@ -300,7 +330,8 @@ Token lexer_next_token(T *l) {
     return parse_literal(l, token_start);
 
   default:
-    return (Token){T_ERROR, .string = {token_start, 1}}; // Unexpected character
+    return (Token){.value = {.string = {token_start, 1}},
+                   T_ERROR}; // Unexpected character
   }
   /*#endregion*/
 }

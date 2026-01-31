@@ -29,6 +29,6 @@ int jsonv_find_property(ASTNode *json_pool, int object_idx, const char *key);
 void print_ast(Stack *ast, int ast_idx, int indent);
 void print_token(TokenType type);
 char *get_error_path(Stack *children, Stack *nodes);
-char *get_node_path(Stack *nodes, int node_idx);
+char *get_node_path(Stack *nodes, int node_idx, size_t size);
 
 #endif
