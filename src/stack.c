@@ -41,6 +41,10 @@ static bool stack_grow(T *s) {
 
   memcpy(tmp, s->data, s->capacity * s->elem_size);
 
+  if (s->extra) {
+    free(s->extra);
+  }
+
   s->extra = tmp;
   s->data = tmp;
   s->capacity = new_capacity;
@@ -48,14 +52,13 @@ static bool stack_grow(T *s) {
   /*#endregion*/
 }
 
-void* stack_push(T *s, const void *elem) {
+void *stack_push(T *s, const void *elem) {
   /*#region*/
   assert(s);
   assert(elem);
 
   /* Grow if needed */
-  //TODO should it not be >= ?
-  if ((size_t)(s->top + 1) == s->capacity) {
+  if ((size_t)(s->top + 1) >= s->capacity) {
     if (!stack_grow(s))
       return NULL;
   }
@@ -68,7 +71,7 @@ void* stack_push(T *s, const void *elem) {
   /*#endregion*/
 }
 
-void* stack_pop(T *s) {
+void *stack_pop(T *s) {
   /*#region*/
   assert(s);
   assert(s->top >= 0);

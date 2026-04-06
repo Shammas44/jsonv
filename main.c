@@ -1,5 +1,7 @@
 #include "file.h"
 #include "jsonv.h"
+#include "shape.h"
+#include "global.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -15,6 +17,8 @@
 
 #define KB(x) 1024 * x
 #define MB(x) 1024 * 1024 * x
+
+Shape *_g_root = NULL;
 
 static char *colors[] = {
     "\x1b[30m", "\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[34m",
@@ -119,13 +123,14 @@ static void print_error(Jsonv_Context *ctx) {
 static bool logic(unsigned char *data, unsigned char *schema,
                   Jsonv_Context **ctx, Arena *arena) {
   /*#region*/
+  (void)(schema);
   bool e = jsonv_ctx_init(ctx, arena, NULL);
-  if (e)
-    e = jsonv_ctx_prepare_schema(ctx, schema);
+  // if (e)
+  //   e = jsonv_ctx_prepare_schema(ctx, schema);
   if (e)
     e = jsonv_ctx_prepare_data(ctx, data);
-  if (e)
-    e = jsonv_ctx_validate(*ctx);
+  // if (e)
+  //   e = jsonv_ctx_validate(*ctx);
   return e;
   /*#endregion*/
 }
@@ -198,6 +203,7 @@ void single_payload(unsigned char *payload, unsigned char *schema,
 
 int main() {
   /*#region*/
+  _g_root = shape_root();
   uint64_t start = now_ns();
   // for (int i = 0; i < 1000; i++) {
   // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold
@@ -208,11 +214,14 @@ int main() {
   char data[] = "{"
                 "\"name\": \"iphone4\","
                 "\"price\": 2,"
+                "\"price\": 5,"
+                "\"price\": 7,"
                 "\"description\": {"
                 "   \"forbidden\": \"test\","
+                "   \"forbidden\": \"yo\","
                 "   \"name\": \"test\","
                 "   \"prices\": ["
-                "       2, 2"
+                "       4, 6"
                 "     ]"
                 "   }"
                 "}";

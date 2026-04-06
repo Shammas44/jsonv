@@ -1,10 +1,19 @@
 #include "ctx.h"
-#include "ast.h"
+#include "arr.h"
+#include "parser.h"
+#include "set.h"
+#include "keytree.h"
 #include "mem.h"
 #include "prescan.h"
 #include "schema.h"
+#include "path.h"
+#include "global.h"
+#include "shape.h"
+#include "print.h"
+#include "obj.h"
 #include "validate.h"
 #include <assert.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,14 +38,17 @@ extern const Except MAXIMUM_TOKEN_BYTES_REACHED;
 extern const Except Mem_Failed;
 
 typedef struct Jsonv_Context {
-  Stack schema;
   Stack data;
-  Stack children;
+  // Stack schema;
   int error;
   E e; // TODO rename
   Jsonv_Ctx_Config config;
   Arena *schema_arena; // TODO rename
   Arena *data_arena;   // TODO rename
+  set_t data_set;
+  set_t schema_set;
+  KeyTreePool data_keytree;
+  KeyTreePool schema_keytree;
 } Jsonv_Context;
 
 static void reset_error(Jsonv_Context *ctx) {
@@ -102,14 +114,15 @@ void jsonv_ctx_print_data(Jsonv_Context *ctx) {
   /*#region*/
   assert(ctx);
   assert(ctx->data.data);
-  print_ast(&ctx->data, ctx->data.top, 0);
+  print_ast(&ctx->data, 0, 0);
   /*#endregion*/
 }
 
 void jsonv_ctx_print_schema(Jsonv_Context *ctx) {
   /*#region*/
-  assert(ctx->schema.data);
-  print_schema(&ctx->schema, 0, 0);
+  (void)(ctx);
+  // assert(ctx->schema.data);
+  // print_schema_rules(&ctx->schema, 0, 0);
   /*#endregion*/
 }
 
@@ -123,57 +136,48 @@ bool jsonv_ctx_prepare_schema(Jsonv_Context **ctx, const unsigned char *json) {
     return false;
 
   Jsonv_Context *c = *ctx;
-  Arena *data_arena = c->data_arena;
-  Arena *schema_arena = c->schema_arena;
+  Arena *arena = c->schema_arena;
   reset_error(c);
-  c->schema.data = NULL;
 
   Lexer lexer;
   lexer_init(&lexer, json, json_length);
 
   Stack ast = {0};
-  Stack children = {0};
+  Stack scopes = {0};
   Stack control = {0};
-  Stack control2 = {0};
-  Stack results = {0};
 
   TRY {
-    // 1. ALLOCATE SPACE FOR AST
+    // 1. PRE-SCAN
+    JsonEstimate est = {0};
+    jsonv_prescan((const char *)json, json_length, &est);
+    // 2. ALLOCATE SPACE FOR AST
     size_t ast_storage_size = json_length * sizeof(ASTNode);
-    void *ast_storage = arena_alloc(data_arena, ast_storage_size);
+    void *ast_storage = arena_alloc(arena, ast_storage_size);
     stack_init(&ast, sizeof(ASTNode), ast_storage, ast_storage_size);
-    // 2. ALLOCATE SPACE FOR CHILDREN
-    size_t children_storage_size = json_length * sizeof(int);
-    void *children_storage = arena_alloc(data_arena, children_storage_size);
-    stack_init(&children, sizeof(int), children_storage, children_storage_size);
-    // 3. ALLOCATE SPACE FOR CONTROL
+    // 3. ALLOCATE SPACE FOR SCOPES
+    size_t scopes_storage_size = json_length * sizeof(int);
+    void *scopes_storage = arena_alloc(arena, scopes_storage_size);
+    stack_init(&scopes, sizeof(int), scopes_storage, scopes_storage_size);
+    // 4. ALLOCATE SPACE FOR CONTROL
     size_t control_storage_size = json_length * sizeof(int);
-    void *control_storage = arena_alloc(data_arena, control_storage_size);
+    void *control_storage = arena_alloc(arena, control_storage_size);
     stack_init(&control, sizeof(int), control_storage, control_storage_size);
-
-    jsonv_ast(&lexer, &ast, &children, &control);
-
-    // print_ast(&ast, ast.top, 0);
-    // 4. ALLOCATE SPACE FOR ASTSCHEMA
-    size_t schema_storage_size = json_length * sizeof(SchemaNode);
-    void *schema_storage = arena_alloc(schema_arena, schema_storage_size);
-    stack_init(&c->schema, sizeof(SchemaNode), schema_storage,
-               schema_storage_size);
-    // 5. ALLOCATE SPACE FOR CONTROL2
-    size_t control2_storage_size = json_length * sizeof(SchemaControl);
-    void *control2_storage = arena_alloc(data_arena, control2_storage_size);
-    stack_init(&control2, sizeof(SchemaControl), control2_storage,
-               control2_storage_size);
-    // 6. ALLOCATE SPACE FOR RESULTS
-    size_t results_storage_size = json_length * sizeof(int);
-    void *results_storage = arena_alloc(data_arena, results_storage_size);
-    stack_init(&results, sizeof(int), results_storage, results_storage_size);
-
-    int json_root = *(int *)stack_peek(&children, 0);
-    out = parse_schema_stack(&ast, json_root, &c->schema, &control2,
-                             &results) == 0
-              ? true
-              : false;
+    // 5. ALLOCATE SPACE FOR SET
+    size_t keys_capacity = round(1.2 * est.value_count);
+    size_t set_storage_size = sizeof(entry_t) * keys_capacity;
+    entry_t *set = arena_alloc(arena, set_storage_size);
+    set_init(&c->schema_set, set, keys_capacity);
+    // 6. ALLOCATE SPACE FOR KEYTREE
+    size_t key_storage_size = sizeof(KeyNode) * keys_capacity;
+    KeyNode *keytree = arena_alloc(arena, key_storage_size);
+    key_tree_init(&c->schema_keytree, keytree, keys_capacity);
+    // 7. COMPILE AST
+    jsonv_ast(&lexer, &ast, &scopes, &control, &c->schema_set, &c->schema_keytree);
+    // 8. COMPILE SCHEMA
+    int count = 0;
+    SchemaRule *s = compile_schema((ASTNode*)ast.data,  0, &count); 
+    print_schema_rules(s, count);
+    return s ? true: false;
   }
   EXCEPT(MALFORMED_JSON) { ERR(MALFORMED_JSON); }
   EXCEPT(Mem_Failed) { ERR(Mem_Failed); }
@@ -202,8 +206,9 @@ bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json) {
   Lexer lexer;
   lexer_init(&lexer, json, json_length);
 
-  c->children.data = NULL;
   Stack control = {0};
+  Stack scopes = {0};
+  scopes.data = NULL;
 
   bool out = false;
   TRY {
@@ -230,16 +235,26 @@ bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json) {
     size_t ast_storage_size = json_length * sizeof(ASTNode);
     void *ast_storage = arena_alloc(arena, ast_storage_size);
     stack_init(&c->data, sizeof(ASTNode), ast_storage, ast_storage_size);
-    // 3. ALLOCATE SPACE FOR CHILDREN
-    size_t children_storage_size = json_length * sizeof(int);
-    void *children_storage = arena_alloc(arena, children_storage_size);
-    stack_init(&c->children, sizeof(int), children_storage,
-               children_storage_size);
+    // 3. ALLOCATE SPACE FOR SCOPES
+    size_t scopes_storage_size = json_length * sizeof(int);
+    void *scopes_storage = arena_alloc(arena, scopes_storage_size);
+    stack_init(&scopes, sizeof(int), scopes_storage,
+               scopes_storage_size);
     // 4. ALLOCATE SPACE FOR CONTROL
     size_t control_storage_size = json_length * sizeof(int);
     void *control_storage = arena_alloc(arena, control_storage_size);
     stack_init(&control, sizeof(int), control_storage, control_storage_size);
-    jsonv_ast(&lexer, &c->data, &c->children, &control);
+    // 5. ALLOCATE SPACE FOR SET
+    size_t keys_capacity = round(1.2 * est.value_count);
+    size_t set_storage_size = sizeof(entry_t) * keys_capacity;
+    entry_t *set = arena_alloc(arena, set_storage_size);
+
+    set_init(&c->data_set, set, keys_capacity);
+    // 6. ALLOCATE SPACE FOR KEYTREE
+    size_t key_storage_size = sizeof(KeyNode) * keys_capacity;
+    KeyNode *keytree = arena_alloc(arena, key_storage_size);
+    key_tree_init(&c->data_keytree, keytree, keys_capacity);
+    jsonv_ast(&lexer, &c->data, &scopes, &control, &c->data_set, &c->data_keytree);
     out = true;
   }
   EXCEPT(MALFORMED_JSON) { ERR(MALFORMED_JSON); }
@@ -252,6 +267,38 @@ bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json) {
   EXCEPT(MAXIMUM_NESTED_DEPTH_REACHED) { ERR(MAXIMUM_NESTED_DEPTH_REACHED); }
   END_TRY;
 
+  Stack *nodes = &c->data;
+  ASTNode *pool = (ASTNode *)nodes->data;
+  // print_ast_alphabetical(pool,&c->data_keytree,0,0);
+  Value v;
+  Value o = ast_to_value(pool,&c->data_keytree,0,_g_root);
+  Shape * s = ((Obj*)(o.as.p))->shape;
+  print_shape(s);
+
+  if (obj_get(o.as.p , "name", &v)) {
+    printf("o.name = ");
+    print_value(v);
+    printf("\n");
+  }
+  if (obj_get(o.as.p , "price", &v)) {
+    printf("o.price = ");
+    print_value(v);
+    printf("\n");
+  }
+  if (obj_get(o.as.p , "description", &v)) {
+    if (obj_get(v.as.p , "prices", &v)) {
+      Arr *k = v.as.p;
+      printf("o.description.price[0] = ");
+      print_value(k->items[0]);
+      printf("\n");
+    }
+  }
+  v = value_get_path(o, "ssi", "description", "prices", 1);
+  if(v.tag == VAL_DOUBLE){
+  printf("o.description.price[1] = ");
+  print_value(v);
+  printf("\n");
+  }
   return out;
   /*#endregion*/
 }
@@ -259,29 +306,30 @@ bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json) {
 int jsonv_ctx_validate(Jsonv_Context *ctx) {
   /*#region*/
   assert(ctx);
-  assert(ctx->schema.data);
-  assert(ctx->data.data);
-  Jsonv_Context *c = ctx;
-  int out;
-  TRY {
-    reset_error(ctx);
-    int data_root = *(int *)stack_peek(&ctx->children, 0);
-    E error = {0};
-    E *p = &error;
-    out = validate_against_schema(&ctx->data, data_root, &ctx->schema, 0, &p);
-    ctx->error = out;
-    if (out != JSONV_SCHEMA_IS_VALID) {
-      size_t buffSize = c->config.max_string_bytes * c->config.max_depth;
-      char *path = get_node_path(&ctx->data, out, buffSize);
-      if(!path) RAISE(Mem_Failed);
-      error.path = path;
-      ctx->e = error;
-    }
-  }
-  EXCEPT(Mem_Failed) { ERR(Mem_Failed); }
-  EXCEPT(ARENA_LIMIT_REACHED) { ERR(ARENA_LIMIT_REACHED); }
-  END_TRY;
-  return out == JSONV_SCHEMA_IS_VALID;
+  // assert(ctx->schema.data);
+  // assert(ctx->data.data);
+  // Jsonv_Context *c = ctx;
+  // int out;
+  // TRY {
+  //   reset_error(ctx);
+  //   int data_root = *(int *)stack_peek(&ctx->children, 0);
+  //   E error = {0};
+  //   E *p = &error;
+  //   out = validate_against_schema(&ctx->data, data_root, &ctx->schema, 0, &p);
+  //   ctx->error = out;
+  //   if (out != JSONV_SCHEMA_IS_VALID) {
+  //     size_t buffSize = c->config.max_string_bytes * c->config.max_depth;
+  //     char *path = get_node_path(&ctx->data, out, buffSize);
+  //     if(!path) RAISE(Mem_Failed);
+  //     error.path = path;
+  //     ctx->e = error;
+  //   }
+  // }
+  // EXCEPT(Mem_Failed) { ERR(Mem_Failed); }
+  // EXCEPT(ARENA_LIMIT_REACHED) { ERR(ARENA_LIMIT_REACHED); }
+  // END_TRY;
+  // return out == JSONV_SCHEMA_IS_VALID;
+  return 0;
   /*#endregion*/
 }
 

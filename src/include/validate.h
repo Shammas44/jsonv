@@ -11,6 +11,6 @@ typedef struct {
   Jsonv_Except_Type type;
 } E;
 
-int validate_against_schema(Stack *data, int data_root, Stack *schema,
-                            int schema_root, E **error);
+// int validate_against_schema(Stack *data, int data_root, Stack *schema,
+//                             int schema_root, E **error);
 #endif

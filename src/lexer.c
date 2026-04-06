@@ -67,11 +67,9 @@ static Token parse_string(Lexer *l, const unsigned char *token_start) {
 
     if (c == '"') {
       l->current_pos++; // Consume closing quote
-      return (Token){
-          .value = {.string = {token_start + 1,
-                               l->current_pos - start_pos - 1}},
-          T_STRING,
-      };
+      return (Token){.value = {.string = {token_start + 1,
+                                          l->current_pos - start_pos - 1}},
+                     T_STRING};
     }
 
     if (c == '\\') {
@@ -141,10 +139,7 @@ static Token parse_literal(T *l, const unsigned char *token_start) {
   if (token_start[0] == 't' && l->current_pos + 3 <= l->source_len &&
       strncmp((char *)l->source + l->current_pos, "rue", 3) == 0) {
     l->current_pos += 3;
-    return (Token){
-        {0},
-        T_TRUE,
-    }; // "true"
+    return (Token){{0}, T_TRUE}; // "true"
   }
 
   if (token_start[0] == 'f' && l->current_pos + 4 <= l->source_len &&
@@ -160,10 +155,7 @@ static Token parse_literal(T *l, const unsigned char *token_start) {
   }
 
   // If it started with t, f, or n but wasn't a recognized literal
-  return (Token){
-      .value = {.string = {token_start, 1}},
-      T_ERROR,
-  };
+  return (Token){.value = {.string = {token_start, 1}}, T_ERROR};
   /*#endregion*/
 }
 
@@ -233,11 +225,9 @@ static Token parse_number(Lexer *l, const unsigned char *token_start) {
 
     if (l->current_pos >= l->source_len ||
         !is_digit(l->source[l->current_pos])) {
-      return (Token){
-          .value = {.string = {(const unsigned char *)token_start,
-                               l->current_pos - start_pos}},
-          T_ERROR,
-      };
+      return (Token){.value = {.string = {(const unsigned char *)token_start,
+                                          l->current_pos - start_pos}},
+                     T_ERROR};
     }
     while (l->current_pos < l->source_len &&
            is_digit(l->source[l->current_pos])) {
@@ -267,10 +257,7 @@ static Token parse_number(Lexer *l, const unsigned char *token_start) {
     value = 0.0;
   }
 
-  return (Token){
-      .value = {.number = value},
-      T_NUMBER,
-  };
+  return (Token){.value = {.number = value}, T_NUMBER};
   /*#endregion*/
 }
 
@@ -279,10 +266,7 @@ Token lexer_next_token(T *l) {
   skip_whitespace(l);
 
   if (l->current_pos >= l->source_len) {
-    return (Token){
-        {0},
-        T_EOF,
-    };
+    return (Token){{0}, T_EOF};
   }
 
   const unsigned char *token_start = l->source + l->current_pos;

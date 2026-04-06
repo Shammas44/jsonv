@@ -1,4 +1,5 @@
 #include "lexer.h"
+#include "utils.h"
 #include <criterion/criterion.h>
 
 #define T Lexer
@@ -8,7 +9,15 @@ static Lexer *l;
 
 static void init(void) {
   /*#region*/
+  test_init();
   l = malloc(lexer_sizeof());
+  /*#endregion*/
+}
+
+static void fini(void) {
+  /*#region*/
+  lexer_free(&l);
+  test_fini();
   /*#endregion*/
 }
 
@@ -24,40 +33,34 @@ static void run_scenario(char *input, TokenType expected[], int length) {
   /*#endregion*/
 }
 
-static void fini(void) {
-  /*#region*/
-  lexer_free(&l);
-  /*#endregion*/
+TIMED_TEST(T, wrong_start_token, init, fini)
+/*#region*/
+static TokenType expected[] = {
+    T_ERROR,
+};
+static char *cases[] = {
+    "t", "f", "nul", "\"key", ".",
+};
+for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+  run_scenario(cases[i], S);
 }
+/*#endregion*/
+END_TIMED_TEST
 
-Test(T, tokenize_simple, .init = init, .fini = fini) {
-  /*#region*/
-  static TokenType expected[] = {
-      T_BRACE_OPEN,  // "{"
-      T_STRING,      // "key1"
-      T_COLON,       // ":"
-      T_STRING,      // "value1"
-      T_COMMA,       // ","
-      T_STRING,      // "key2"
-      T_COLON,       // ":"
-      T_STRING,      // "value2"
-      T_BRACE_CLOSE, // "}"
-      T_EOF,         //
-  };
-  run_scenario("{\"key1\": \"value1\", \"key2\": \"value2\" }", S);
-  /*#endregion*/
-}
-
-Test(T, wrong_start_token, .init = init, .fini = fini) {
-  /*#region*/
-  static TokenType expected[] = {
-      T_ERROR,
-  };
-  static char *cases[] = {
-      "t", "f", "nul", "\"key", ".",
-  };
-  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
-    run_scenario(cases[i], S);
-  }
-  /*#endregion*/
-}
+TIMED_TEST(T, tokenize_simple, init, fini)
+/*#region*/
+static TokenType expected[] = {
+    T_BRACE_OPEN,  // "{"
+    T_STRING,      // "key1"
+    T_COLON,       // ":"
+    T_STRING,      // "value1"
+    T_COMMA,       // ","
+    T_STRING,      // "key2"
+    T_COLON,       // ":"
+    T_STRING,      // "value2"
+    T_BRACE_CLOSE, // "}"
+    T_EOF,         //
+};
+run_scenario("{\"key1\": \"value1\", \"key2\": \"value2\" }", S);
+/*#endregion*/
+END_TIMED_TEST

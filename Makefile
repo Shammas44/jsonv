@@ -49,7 +49,7 @@ ifeq ($(OPTION), prod)
 else ifeq ($(OPTION), dev)
   CFLAGS := $(BASE_CFLAGS) -g
 else ifeq ($(OPTION), test)
-  CFLAGS := $(BASE_CFLAGS) -g -Wno-builtin-declaration-mismatch -Wno-implicit-function-declaration -fPIC
+  CFLAGS := $(BASE_CFLAGS) -g -Wno-implicit-function-declaration -fPIC
 else
   CFLAGS := $(BASE_CFLAGS) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fPIC
 endif

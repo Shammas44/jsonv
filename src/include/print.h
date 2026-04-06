@@ -1,4 +1,0 @@
-#ifndef _JSONV_PRINT_H_INCLUDED
-#define _JSONV_PRINT_H_INCLUDED
-
-#endif
