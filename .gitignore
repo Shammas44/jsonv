@@ -9,3 +9,6 @@ bin/main.dSYM
 .DS_Store
 lib
 dev
+.antigravitycli
+output_fuzz
+mismatches

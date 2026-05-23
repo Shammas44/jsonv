@@ -1,4 +1,9 @@
 #include "ast.h"
+#include "lexer.h"
+#include "parser.h"
+#include "keytree.h"
+#include "set.h"
+#include "stack.h"
 #include "except.h"
 #include "utils.h"
 #include <criterion/criterion.h>
@@ -33,11 +38,17 @@ static bool run_scenario(Stack *ast, unsigned char *input) {
   stack_init(&children, sizeof(int), children_storage,
              sizeof(children_storage));
 
-
+  #define CAPACITY 200
   set_t set;
-  set_init(&set);
+  entry_t entries[CAPACITY] = {};
+  set_init(&set, entries, CAPACITY);
+
+  KeyTreePool keytree;
+  KeyNode nodes[CAPACITY] = {};
+  key_tree_init(&keytree, nodes, CAPACITY);
+
   bool out = true;
-  TRY { jsonv_ast(l, ast, &control, &children, &set); }
+  TRY { jsonv_ast(l, ast, &control, &children, &set, &keytree); }
   ELSE { out = false; }
   END_TRY;
   return out;
@@ -47,7 +58,7 @@ static bool run_scenario(Stack *ast, unsigned char *input) {
 TIMED_TEST(T, simple_valid, init, fini)
 /*#region*/
 Stack stack;
-unsigned char storage[1000] = {0};
+unsigned char storage[960] = {0};
 char *cases[] = {
     "{}",                                     //
     "{\"k1\": \"v1\", \"k2\": \"v2\"}",       //
@@ -70,7 +81,7 @@ END_TIMED_TEST
 TIMED_TEST(T, simple_invalid, init, fini)
 /*#region*/
 Stack stack;
-unsigned char storage[1000] = {0};
+unsigned char storage[960] = {0};
 char *cases[] = {
     "{\"k1\": }",                       // missing value
     "{\"k1\": [true false null] }",     // missing commas

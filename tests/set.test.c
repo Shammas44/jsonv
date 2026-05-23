@@ -4,15 +4,16 @@
 #include <string.h>
 
 #define T set_t
-
+#define SET_CAPACITY 150
 /* ---------- Setup/Teardown ---------- */
 
 static T s;
+static entry_t entries[SET_CAPACITY] = {};
 
 static void init() {
   /*#region*/
   test_init();
-  set_init(&s);
+  set_init(&s, entries, SET_CAPACITY);
   /*#endregion*/
 }
 

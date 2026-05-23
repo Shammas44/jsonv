@@ -10,6 +10,7 @@ void stack_init(T *s, size_t elem_size, unsigned char *data, size_t data_size) {
   assert(elem_size > 0);
   assert(data_size > 0);
   assert(s);
+  // TODO improve this
   assert(data_size % elem_size == 0);
   s->data = data;
   s->extra = NULL;

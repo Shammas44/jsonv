@@ -1,6 +1,7 @@
 #ifndef _JSONV_CTX_H_INCLUDED
 #define _JSONV_CTX_H_INCLUDED
 #include "arena.h"
+#include "value.h"
 #include "validate.h"
 
 typedef struct {
@@ -26,5 +27,16 @@ void jsonv_ctx_print_data(Jsonv_Context *ctx);
 void jsonv_ctx_print_schema(Jsonv_Context *ctx);
 void jsonv_ctx_free(Jsonv_Context *ctx);
 E *  jsonv_ctx_error(Jsonv_Context *ctx);
+
+
+
+typedef struct  SchemaCtx SchemaCtx;
+typedef struct  AstCtx AstCtx;
+typedef struct  ValidationCtx ValidationCtx;
+
+AstCtx *jsonv_to_ast(char*json, Arena*arena, Jsonv_Ctx_Config *config);
+Value jsonv_to_value(AstCtx *ast);
+SchemaCtx *jsonv_to_schema(AstCtx *ast, Arena*arena, Jsonv_Ctx_Config *config);
+ValidationCtx *jsonv_validate(SchemaCtx *schema, AstCtx *ast);
 
 #endif
