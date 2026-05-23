@@ -7,6 +7,8 @@
 #include "lexer.h"
 #include "set.h"
 #include "stack.h"
+#include "arena.h"
+#include "mem.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -509,7 +511,7 @@ char *get_node_path(Stack *nodes, int node_idx, size_t size) {
     return NULL;
   ASTNode *pool = (ASTNode *)nodes->data;
 
-  char *buffer = malloc(size);
+  char *buffer = ALLOC(size);
   if (!buffer)
     return NULL;
 
@@ -627,8 +629,8 @@ void print_ast_alphabetical(ASTNode *pool, KeyTreePool *key_pool, int node_idx,
   /*#endregion*/
 }
 
-// Recursively converts an AST node into a runtime Value
-Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *shape_root) {
+// Recursively converts an AST node into a runtime Value using chained arena allocations
+Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *shape_root, Arena *arena) {
     if (node_idx == -1) return val_null();
     
     ASTNode *node = &pool[node_idx];
@@ -652,17 +654,18 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
                 ASTNode *key_node = &pool[key_idx];
                 int val_idx = key_node->next_sibling;
                 
-                    if (val_idx != -1) {
+                if (val_idx != -1) {
                     // 1. Evaluate the child value recursively
-                    Value child_val = ast_to_value(pool, key_pool, val_idx, shape_root);
+                    Value child_val = ast_to_value(pool, key_pool, val_idx, shape_root, arena);
                     
-                    // 2. Extract the key string dynamically to prevent dangling pointers
-                    // This ensures the Shape struct can safely store the pointer
+                    // 2. Extract the key string dynamically using Arena allocation to prevent dangling pointers
+                    // and strictly avoid the standard library malloc call.
                     int klen = key_node->token.value.string.length;
-                    char *key_str = (char *)malloc(klen + 1);
-                    
-                    memcpy(key_str, key_node->token.value.string.start, klen);
-                    key_str[klen] = '\0';
+                    char *key_str = (char *)arena_alloc(arena, klen + 1);
+                    if (key_str) {
+                        memcpy(key_str, key_node->token.value.string.start, klen);
+                        key_str[klen] = '\0';
+                    }
                     
                     // 3. Set the property on the object
                     // Because we iterate through sorted_keys, obj_set is ALWAYS 
@@ -679,10 +682,10 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
             Arr *arr = arr_new();
             
             int child_idx = node->first_child;
-            for (int i = 0;child_idx != -1; i++) {
+            for (int i = 0; child_idx != -1; i++) {
                 // Arrays maintain their parsed order
-                Value child_val = ast_to_value(pool, key_pool, child_idx, shape_root);
-                arr_set(arr,i, child_val);
+                Value child_val = ast_to_value(pool, key_pool, child_idx, shape_root, arena);
+                arr_set(arr, i, child_val);
                 child_idx = pool[child_idx].next_sibling;
             }
             
@@ -702,15 +705,15 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
                 case T_FALSE:
                     return val_bool(0);
                 case T_STRING: {
-                    // Extract null-terminated string
+                    // Extract null-terminated string using Arena allocation
                     int slen = node->token.value.string.length;
-                    char *tmp_str = (char *)malloc(slen + 1);
-                    memcpy(tmp_str, node->token.value.string.start, slen);
-                    tmp_str[slen] = '\0';
+                    char *tmp_str = (char *)arena_alloc(arena, slen + 1);
+                    if (tmp_str) {
+                        memcpy(tmp_str, node->token.value.string.start, slen);
+                        tmp_str[slen] = '\0';
+                    }
                     
                     Value str_val = val_str(tmp_str);
-                    // Do not free(tmp_str) here, otherwise the value's string 
-                    // pointer becomes an invalid dangling pointer!
                     return str_val;
                 }
                 default:

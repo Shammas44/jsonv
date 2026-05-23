@@ -270,7 +270,7 @@ bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json) {
   ASTNode *pool = (ASTNode *)nodes->data;
   // print_ast_alphabetical(pool,&c->data_keytree,0,0);
   Value v;
-  Value o = ast_to_value(pool,&c->data_keytree,0,_g_root);
+  Value o = ast_to_value(pool, &c->data_keytree, 0, _g_root, arena);
   Shape * s = ((Obj*)(o.as.p))->shape;
   print_shape(s);
 

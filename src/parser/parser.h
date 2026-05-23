@@ -8,6 +8,8 @@
 #include "set.h"
 #include "stack.h"
 
+#include "arena.h"
+
 void jsonv_ast(Lexer *it, Stack *ast, Stack *scopes, Stack *controls,
                set_t *set, KeyTreePool *keytree);
 int jsonv_find_property(ASTNode *json_pool, int object_idx, const char *key);
@@ -17,6 +19,6 @@ char *get_node_path(Stack *nodes, int node_idx, size_t size);
 void print_ast_alphabetical(ASTNode *pool, KeyTreePool *key_pool, int node_idx,
                             int indent);
 
-Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *shape_root);
+Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *shape_root, Arena *arena);
 
 #endif

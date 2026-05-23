@@ -1,6 +1,7 @@
 #include "lexer.h"
 #include "assert.h"
 #include "token.h"
+#include "mem.h" // Conforms to strict allocation rules
 #include <errno.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -32,13 +33,12 @@ static bool advance_if_match(Lexer *l, char expected) {
 
 static void skip_whitespace(T *l) {
   /*#region*/
-  while (l->current_pos < l->source_len) {
-    char c = l->source[l->current_pos];
-    if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
-      l->current_pos++;
-    } else {
-      break;
-    }
+  // Optimization: Fast Lookup Table (LUT) for branchless whitespace scanning
+  static const uint8_t is_space_lut[256] = {
+      [' '] = 1, ['\t'] = 1, ['\r'] = 1, ['\n'] = 1
+  };
+  while (l->current_pos < l->source_len && is_space_lut[l->source[l->current_pos]]) {
+    l->current_pos++;
   }
   /*#endregion*/
 }
@@ -77,8 +77,11 @@ static Token parse_string(Lexer *l, const unsigned char *token_start) {
       if (l->current_pos < l->source_len) {
         char escaped_char = l->source[l->current_pos];
 
-        // Handle standard escapes
-        if (strchr("\"\\/bfnrt", escaped_char) != NULL) {
+        // Optimization: Inlined short-circuit check instead of standard library strchr call
+        if (escaped_char == '"'  || escaped_char == '\\' ||
+            escaped_char == '/'  || escaped_char == 'b'  ||
+            escaped_char == 'f'  || escaped_char == 'n'  ||
+            escaped_char == 't'  || escaped_char == 'r') {
           l->current_pos++;
           continue;
         }
@@ -136,20 +139,28 @@ static Token parse_literal(T *l, const unsigned char *token_start) {
   /*#region*/
   // We have already consumed the first char (t, f, or n)
 
+  // Optimization: Direct index character comparison instead of standard strncmp call
   if (token_start[0] == 't' && l->current_pos + 3 <= l->source_len &&
-      strncmp((char *)l->source + l->current_pos, "rue", 3) == 0) {
+      l->source[l->current_pos] == 'r' &&
+      l->source[l->current_pos + 1] == 'u' &&
+      l->source[l->current_pos + 2] == 'e') {
     l->current_pos += 3;
     return (Token){{0}, T_TRUE}; // "true"
   }
 
   if (token_start[0] == 'f' && l->current_pos + 4 <= l->source_len &&
-      strncmp((char *)l->source + l->current_pos, "alse", 4) == 0) {
+      l->source[l->current_pos] == 'a' &&
+      l->source[l->current_pos + 1] == 'l' &&
+      l->source[l->current_pos + 2] == 's' &&
+      l->source[l->current_pos + 3] == 'e') {
     l->current_pos += 4;
     return (Token){{0}, T_FALSE}; // "false"
   }
 
   if (token_start[0] == 'n' && l->current_pos + 3 <= l->source_len &&
-      strncmp((char *)l->source + l->current_pos, "ull", 3) == 0) {
+      l->source[l->current_pos] == 'u' &&
+      l->source[l->current_pos + 1] == 'l' &&
+      l->source[l->current_pos + 2] == 'l') {
     l->current_pos += 3;
     return (Token){{0}, T_NULL}; // "null"
   }
@@ -339,8 +350,9 @@ size_t lexer_sizeof(void) {
 
 void lexer_free(T **l) {
   /*#region*/
-  T *lexer = *l;
-  free(lexer);
-  l = NULL;
+  // Fixed: Utilizes custom memory tracking FREE macro and zeroes caller's pointer safely
+  if (l && *l) {
+    FREE(*l);
+  }
   /*#endregion*/
 }
