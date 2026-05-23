@@ -27,6 +27,7 @@ typedef struct T {
 void set_init(T *set, entry_t*entries, size_t capacity) ;
 size_t set_insert(T *set, const char *key, uint16_t len);
 void set_clear(T*set);
+size_t set_next_power_of_two(size_t capacity);
 
 #undef T
 #endif

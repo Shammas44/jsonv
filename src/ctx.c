@@ -35,7 +35,6 @@ extern const Except MAXIMUM_ARRAY_REACHED;
 extern const Except MAXIMUM_VALUES_REACHED;
 extern const Except ARENA_LIMIT_REACHED;
 extern const Except MAXIMUM_TOKEN_BYTES_REACHED;
-extern const Except Mem_Failed;
 
 typedef struct Jsonv_Context {
   Stack data;
@@ -163,7 +162,7 @@ bool jsonv_ctx_prepare_schema(Jsonv_Context **ctx, const unsigned char *json) {
     void *control_storage = arena_alloc(arena, control_storage_size);
     stack_init(&control, sizeof(int), control_storage, control_storage_size);
     // 5. ALLOCATE SPACE FOR SET
-    size_t keys_capacity = round(1.2 * est.value_count);
+    size_t keys_capacity = set_next_power_of_two(round(1.2 * est.value_count));
     size_t set_storage_size = sizeof(entry_t) * keys_capacity;
     entry_t *set = arena_alloc(arena, set_storage_size);
     set_init(&c->schema_set, set, keys_capacity);
@@ -245,7 +244,7 @@ bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json) {
     void *control_storage = arena_alloc(arena, control_storage_size);
     stack_init(&control, sizeof(int), control_storage, control_storage_size);
     // 5. ALLOCATE SPACE FOR SET
-    size_t keys_capacity = round(1.2 * est.value_count);
+    size_t keys_capacity = set_next_power_of_two(round(1.2 * est.value_count));
     size_t set_storage_size = sizeof(entry_t) * keys_capacity;
     entry_t *set = arena_alloc(arena, set_storage_size);
 

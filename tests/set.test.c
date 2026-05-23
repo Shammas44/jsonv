@@ -4,7 +4,7 @@
 #include <string.h>
 
 #define T set_t
-#define SET_CAPACITY 150
+#define SET_CAPACITY 128
 /* ---------- Setup/Teardown ---------- */
 
 static T s;
