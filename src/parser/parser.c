@@ -485,13 +485,13 @@ int jsonv_find_property(ASTNode *json_pool, int object_idx, const char *key) {
   if (obj->type != AST_OBJECT)
     return -1;
 
+  size_t key_len = strlen(key);
   int curr = obj->first_child;
   while (curr != -1) {
     if (json_pool[curr].type != AST_SKIPPED) {
       Token k = json_pool[curr].token;
-      if (strncmp((char *)k.value.string.start, key, k.value.string.length) ==
-              0 &&
-          strlen(key) == k.value.string.length) {
+      if (k.value.string.length == key_len &&
+          strncmp((char *)k.value.string.start, key, key_len) == 0) {
         return json_pool[curr].next_sibling;
       }
     }
@@ -629,6 +629,24 @@ void print_ast_alphabetical(ASTNode *pool, KeyTreePool *key_pool, int node_idx,
   /*#endregion*/
 }
 
+static lstr_t arena_alloc_str(Arena *arena, const unsigned char *start, size_t len) {
+  /*#region*/
+  // Safe overflow check
+  if (len > SIZE_MAX - sizeof(StringHeader) - 1) {
+    return NULL;
+  }
+  size_t total_size = sizeof(StringHeader) + len + 1;
+  StringHeader *str = (StringHeader *)arena_alloc(arena, total_size);
+  if (!str) {
+    return NULL;
+  }
+  str->length = (uint32_t)len;
+  memcpy(str->data, start, len);
+  str->data[len] = '\0';
+  return (lstr_t)str->data;
+  /*#endregion*/
+}
+
 // Recursively converts an AST node into a runtime Value using chained arena allocations
 Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *shape_root, Arena *arena) {
     if (node_idx == -1) return val_null();
@@ -658,14 +676,9 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
                     // 1. Evaluate the child value recursively
                     Value child_val = ast_to_value(pool, key_pool, val_idx, shape_root, arena);
                     
-                    // 2. Extract the key string dynamically using Arena allocation to prevent dangling pointers
-                    // and strictly avoid the standard library malloc call.
+                    // 2. Extract the key string dynamically using length-prefixed Arena allocation
                     int klen = key_node->token.value.string.length;
-                    char *key_str = (char *)arena_alloc(arena, klen + 1);
-                    if (key_str) {
-                        memcpy(key_str, key_node->token.value.string.start, klen);
-                        key_str[klen] = '\0';
-                    }
+                    lstr_t key_str = arena_alloc_str(arena, key_node->token.value.string.start, klen);
                     
                     // 3. Set the property on the object
                     // Because we iterate through sorted_keys, obj_set is ALWAYS 
@@ -705,13 +718,9 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
                 case T_FALSE:
                     return val_bool(0);
                 case T_STRING: {
-                    // Extract null-terminated string using Arena allocation
+                    // Extract null-terminated string using length-prefixed Arena allocation
                     int slen = node->token.value.string.length;
-                    char *tmp_str = (char *)arena_alloc(arena, slen + 1);
-                    if (tmp_str) {
-                        memcpy(tmp_str, node->token.value.string.start, slen);
-                        tmp_str[slen] = '\0';
-                    }
+                    lstr_t tmp_str = arena_alloc_str(arena, node->token.value.string.start, slen);
                     
                     Value str_val = val_str(tmp_str);
                     return str_val;

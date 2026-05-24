@@ -2,6 +2,7 @@
 #define VALUE_H
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 typedef enum {
   VAL_UNDEFINED = 0,
@@ -16,6 +17,11 @@ typedef enum {
   VAL_UNRESOLVABLE,
   VAL_IMPOSSIBLE,
 } ValueTag;
+
+typedef struct {
+  uint32_t length;
+  char data[];
+} StringHeader;
 
 typedef struct Value Value;
 
@@ -43,7 +49,10 @@ Value val_double(double x);
 
 Value val_arr(void *x);
 
-Value val_str(void *x);
+typedef char *lstr_t;
+typedef const char *const_lstr_t;
+
+Value val_str(lstr_t x);
 
 Value val_null(void);
 
@@ -55,5 +64,11 @@ void value_retain(Value v);
 
 void value_release(Value v);
 
+static inline size_t val_str_len(Value v) {
+  if (v.tag == VAL_STRING && v.as.p) {
+    return ((StringHeader *)v.as.p - 1)->length;
+  }
+  return 0;
+}
 
 #endif
