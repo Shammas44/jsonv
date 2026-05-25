@@ -5,38 +5,47 @@
 #include "validate.h"
 
 typedef struct {
-  // Arena
   size_t default_block_size;
   size_t max_limit;
   size_t shrink_at;
-  // Prescan
   size_t max_depth;
   size_t max_values;
   size_t max_objects;
   size_t max_array;
   size_t max_string_bytes;
-} Jsonv_Ctx_Config;
+} Jsonv_Config;
 
+typedef struct Jsonv_Schema Jsonv_Schema;
 typedef struct Jsonv_Context Jsonv_Context;
 
-bool jsonv_ctx_init(Jsonv_Context **ctx, Arena* schema_arena, Jsonv_Ctx_Config *config);
-bool jsonv_ctx_prepare_data(Jsonv_Context **ctx, const unsigned char *json);
-bool jsonv_ctx_prepare_schema(Jsonv_Context **ctx, const unsigned char *json);
-int  jsonv_ctx_validate(Jsonv_Context *ctx);
-void jsonv_ctx_print_data(Jsonv_Context *ctx);
-void jsonv_ctx_print_schema(Jsonv_Context *ctx);
-void jsonv_ctx_free(Jsonv_Context *ctx);
-E *  jsonv_ctx_error(Jsonv_Context *ctx);
+Jsonv_Schema* jsonv_schema_compile(
+    Arena *schema_arena,
+    const unsigned char *schema_json,
+    const Jsonv_Config *config,
+    E *out_error
+);
 
+Jsonv_Context* jsonv_ctx_create(
+    Arena *execution_arena,
+    const Jsonv_Config *config
+);
 
+bool jsonv_ctx_parse_data(
+    Jsonv_Context *ctx,
+    const unsigned char *data_json,
+    Value *out_value
+);
 
-typedef struct  SchemaCtx SchemaCtx;
-typedef struct  AstCtx AstCtx;
-typedef struct  ValidationCtx ValidationCtx;
+bool jsonv_ctx_validate(
+    Jsonv_Context *ctx,
+    const Jsonv_Schema *schema,
+    Value data_value
+);
 
-AstCtx *jsonv_to_ast(char*json, Arena*arena, Jsonv_Ctx_Config *config);
-Value jsonv_to_value(AstCtx *ast);
-SchemaCtx *jsonv_to_schema(AstCtx *ast, Arena*arena, Jsonv_Ctx_Config *config);
-ValidationCtx *jsonv_validate(SchemaCtx *schema, AstCtx *ast);
+const E* jsonv_ctx_get_error(const Jsonv_Context *ctx);
+
+Arena* jsonv_ctx_arena(const Jsonv_Context *ctx);
+
+void jsonv_ctx_reset(Jsonv_Context *ctx);
 
 #endif

@@ -67,6 +67,19 @@ typedef struct {
 
 // --- HELPERS ---
 
+static inline bool is_ast_string(const ASTNode *n) {
+  return n->type == AST_STRING || (n->type == AST_LEAF && n->token.type == T_STRING);
+}
+
+static inline bool is_ast_true(const ASTNode *n) {
+  return n->type == AST_TRUE || (n->type == AST_LEAF && n->token.type == T_TRUE);
+}
+
+static inline bool is_ast_false(const ASTNode *n) {
+  return n->type == AST_FALSE || (n->type == AST_LEAF && n->token.type == T_FALSE);
+}
+
+
 bool token_equals(Token t, const char *str) {
   /*#region*/
   if (t.type != T_STRING)
@@ -103,19 +116,15 @@ double parse_number(Token t) {
   /*#endregion*/
 }
 
-// Resizes the rule array and returns the index of the new slot
-int emit_rule(SchemaRule **rules, int *count, int *cap) {
+// Allocates a new rule slot from our pre-allocated Arena pool
+static int emit_rule(SchemaRule *rules, int *count, int cap) {
   /*#region*/
-  if (*count >= *cap) {
-    *cap = (*cap == 0) ? 64 : *cap * 2;
-    SchemaRule *new_ptr = realloc(*rules, *cap * sizeof(SchemaRule));
-    if (!new_ptr)
-      return -1;
-    *rules = new_ptr;
+  if (*count >= cap) {
+    return -1;
   }
 
   int idx = (*count)++;
-  SchemaRule *r = &(*rules)[idx];
+  SchemaRule *r = &rules[idx];
 
   // Initialize defaults
   memset(r, 0, sizeof(SchemaRule));
@@ -156,11 +165,15 @@ int map_type_string_to_mask(Token t) {
 
 // --- MAIN COMPILER LOGIC ---
 
-SchemaRule *compile_schema(ASTNode *nodes, int root_idx, int *out_count) {
+SchemaRule *compile_schema(Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_count) {
   /*#region*/
-  int rule_cap = 0;
+  if (ast_count <= 0) return NULL;
+  
+  // Pre-allocate rules array on the Arena based on total AST count
+  SchemaRule *rules = (SchemaRule *)arena_alloc(arena, ast_count * sizeof(SchemaRule));
+  if (!rules) return NULL;
+  
   int rule_count = 0;
-  SchemaRule *rules = NULL;
 
   // Stack setup
   unsigned char stack_buf[4096]; // 4KB stack buffer
@@ -176,9 +189,10 @@ SchemaRule *compile_schema(ASTNode *nodes, int root_idx, int *out_count) {
     ASTNode *node = &nodes[task.ast_idx];
 
     // 1. Create Rule
-    int curr_idx = emit_rule(&rules, &rule_count, &rule_cap);
+    int curr_idx = emit_rule(rules, &rule_count, ast_count);
     if (curr_idx == -1) {
       fprintf(stderr, "Memory allocation failed\n");
+      stack_destroy(&stack);
       return NULL;
     }
 
@@ -196,11 +210,11 @@ SchemaRule *compile_schema(ASTNode *nodes, int root_idx, int *out_count) {
 
     // 3. Process Schema Keywords
     // If the AST node is simple boolean true/false schema
-    if (node->type == AST_TRUE) {
+    if (is_ast_true(node)) {
       // empty rule = allow everything
       continue;
     }
-    if (node->type == AST_FALSE) {
+    if (is_ast_false(node)) {
       // "type_mask = -1" or specific flag to indicate "fail always"
       // For now, let's set type_mask to something impossible or flag it
       rules[curr_idx].type_mask = -1; // -1 could signal "fail"
@@ -217,7 +231,7 @@ SchemaRule *compile_schema(ASTNode *nodes, int root_idx, int *out_count) {
 
       // KEYWORD: "type"
       if (token_equals(key->token, "type")) {
-        if (val->type == AST_STRING) {
+        if (is_ast_string(val)) {
           rules[curr_idx].type_mask = map_type_string_to_mask(val->token);
         } else if (val->type == AST_ARRAY) {
           // Handle ["string", "null"]
@@ -249,8 +263,8 @@ SchemaRule *compile_schema(ASTNode *nodes, int root_idx, int *out_count) {
 
       // KEYWORDS: Arrays
       else if (token_equals(key->token, "items")) {
-        if (val->type == AST_OBJECT || val->type == AST_TRUE ||
-            val->type == AST_FALSE) {
+        if (val->type == AST_OBJECT || is_ast_true(val) ||
+            is_ast_false(val)) {
           CompileTask t = {key_idx + 1, curr_idx, PATCH_ITEMS, 0};
           stack_push(&stack, &t);
         }
@@ -267,8 +281,12 @@ SchemaRule *compile_schema(ASTNode *nodes, int root_idx, int *out_count) {
           p_idx = nodes[p_idx + 1].next_sibling; // Skip key+val
         }
 
-        // Allocate
-        rules[curr_idx].props = malloc(count * sizeof(PropertyRule));
+        // Allocate property rules on the Arena
+        rules[curr_idx].props = (PropertyRule *)arena_alloc(arena, count * sizeof(PropertyRule));
+        if (count > 0 && !rules[curr_idx].props) {
+          stack_destroy(&stack);
+          return NULL;
+        }
         rules[curr_idx].prop_count = count;
 
         // Second pass: Create Tasks
@@ -298,7 +316,12 @@ SchemaRule *compile_schema(ASTNode *nodes, int root_idx, int *out_count) {
           r_idx = nodes[r_idx].next_sibling;
         }
 
-        rules[curr_idx].required = malloc(count * sizeof(Token));
+        // Allocate required list on the Arena
+        rules[curr_idx].required = (Token *)arena_alloc(arena, count * sizeof(Token));
+        if (count > 0 && !rules[curr_idx].required) {
+          stack_destroy(&stack);
+          return NULL;
+        }
         rules[curr_idx].required_count = count;
 
         // Fill
@@ -309,9 +332,9 @@ SchemaRule *compile_schema(ASTNode *nodes, int root_idx, int *out_count) {
           r_idx = nodes[r_idx].next_sibling;
         }
       } else if (token_equals(key->token, "additionalProperties")) {
-        if (val->type == AST_FALSE) {
+        if (is_ast_false(val)) {
           rules[curr_idx].additional_props_rule = -2; // Disallowed
-        } else if (val->type == AST_OBJECT || val->type == AST_TRUE) {
+        } else if (val->type == AST_OBJECT || is_ast_true(val)) {
           CompileTask t = {key_idx + 1, curr_idx, PATCH_ADDITIONAL_PROPS, 0};
           stack_push(&stack, &t);
         }
