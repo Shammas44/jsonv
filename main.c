@@ -203,11 +203,11 @@ void single_payload(unsigned char *payload, unsigned char *schema,
 
 int main() {
   /*#region*/
-  _g_root = shape_root();
+  Arena *arena = arena_new(KB(4), MB(1), KB(12));
+  _g_root = shape_root(arena);
   uint64_t start = now_ns();
   // for (int i = 0; i < 1000; i++) {
   // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold
-  Arena *arena = arena_new(KB(4), MB(1), KB(12));
   size_t size;
   unsigned char *schema = file_read("./schema2.json", &size);
 

@@ -649,14 +649,15 @@ static lstr_t arena_alloc_str(Arena *arena, const unsigned char *start, size_t l
 
 // Recursively converts an AST node into a runtime Value using chained arena allocations
 Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *shape_root, Arena *arena) {
+  /*#region*/
     if (node_idx == -1) return val_null();
     
     ASTNode *node = &pool[node_idx];
-
+ 
     switch ((int)node->type) {
         case AST_OBJECT: {
             // Create the runtime object starting from the root shape
-            Obj *obj = obj_new(shape_root);
+            Obj *obj = obj_new(arena, shape_root);
             
             // We use a local array to retrieve the sorted keys.
             // 256 is used for safety, but you can dynamically allocate this if needed.
@@ -666,7 +667,7 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
             
             // Extract AST Key node indices in strict alphabetical order
             key_tree_get_ordered(key_pool, node->key_tree_root, sorted_keys, &count);
-
+ 
             for (int i = 0; i < count; i++) {
                 int key_idx = sorted_keys[i];
                 ASTNode *key_node = &pool[key_idx];
@@ -683,28 +684,28 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
                     // 3. Set the property on the object
                     // Because we iterate through sorted_keys, obj_set is ALWAYS 
                     // called in alphabetical order, maximizing shape sharing!
-                    obj_set(obj, key_str, child_val);
+                    obj_set(arena, obj, (const_lstr_t)key_str, child_val);
                 }
             }
             
             return val_obj(obj);
         }
-
+ 
         case AST_ARRAY: {
             // Assumes you have an array implementation in your runtime
-            Arr *arr = arr_new();
+            Arr *arr = arr_new(arena);
             
             int child_idx = node->first_child;
             for (int i = 0; child_idx != -1; i++) {
                 // Arrays maintain their parsed order
                 Value child_val = ast_to_value(pool, key_pool, child_idx, shape_root, arena);
-                arr_set(arr, i, child_val);
+                arr_set(arena, arr, i, child_val);
                 child_idx = pool[child_idx].next_sibling;
             }
             
             return val_arr(arr);
         }
-
+ 
         case AST_LEAF: {
             switch (node->token.type) {
                 case T_NUMBER:
@@ -733,4 +734,5 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
         default:
             return val_null();
     }
+  /*#endregion*/
 }

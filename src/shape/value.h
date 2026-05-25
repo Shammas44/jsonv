@@ -52,7 +52,7 @@ Value val_arr(void *x);
 typedef char *lstr_t;
 typedef const char *const_lstr_t;
 
-Value val_str(lstr_t x);
+Value val_str(const_lstr_t x);
 
 Value val_null(void);
 

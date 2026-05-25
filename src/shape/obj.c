@@ -1,47 +1,61 @@
 #include "obj.h"
 #include "value.h"
+#include "mem.h"
 #include <stdlib.h>
+#include <string.h>
 
 void obj_free(Obj *o) {
-  for (int i = 0; i < o->shape->slot_count; i++) {
-    value_release(o->slots[i]);
-  }
-  free(o->slots);
-  free(o);
+  /*#region*/
+  // Memory is automatically collected on Arena resets/destructions, 
+  // so this acts strictly as a safe no-op to comply with the malloc/free ban.
+  (void)o;
+  /*#endregion*/
 }
 
 /* ------------------- Object ------------------- */
 
-Obj *obj_new(Shape *root) {
-  Obj *o = (Obj *)calloc(1, sizeof(Obj));
+Obj *obj_new(Arena *arena, Shape *root) {
+  /*#region*/
+  // Conforms strictly to memory laws: allocates directly on the Arena memory pool
+  Obj *o = (Obj *)arena_alloc(arena, sizeof(Obj));
+  if (!o) return NULL;
   o->shape = root;
   o->slots = NULL;
   o->capacity = 0;
   o->refcount = 0;
   return o;
+  /*#endregion*/
 }
 
-void obj_ensure_capacity(Obj *o, int needed) {
+void obj_ensure_capacity(Arena *arena, Obj *o, int needed) {
+  /*#region*/
   if (o->capacity >= needed)
     return;
   int newcap = o->capacity ? o->capacity : 4;
   while (newcap < needed)
     newcap *= 2;
 
-  o->slots = (Value *)realloc(o->slots, (size_t)newcap * sizeof(Value));
-  // initialize new memory to undefined
-  for (int i = o->capacity; i < newcap; i++) {
-    o->slots[i] = val_undefined();
+  // Conforms strictly to memory laws: allocates a new slot buffer contiguously in the Arena
+  Value *new_slots = (Value *)arena_alloc(arena, (size_t)newcap * sizeof(Value));
+  if (!new_slots) return;
+
+  // Copy old slots
+  if (o->slots && o->capacity > 0) {
+    memcpy(new_slots, o->slots, (size_t)o->capacity * sizeof(Value));
   }
+
+  // Initialize new slots to undefined
+  for (int i = o->capacity; i < newcap; i++) {
+    new_slots[i] = val_undefined();
+  }
+
+  o->slots = new_slots;
   o->capacity = newcap;
+  /*#endregion*/
 }
 
-/*
-  Set property:
-  - If key already exists in current shape: write to slot
-  - Else: transition to a new shape that adds the key, grow slot storage, write
-*/
-void obj_set(Obj *o, const char *key, Value v) {
+void obj_set(Arena *arena, Obj *o, const_lstr_t key, Value v) {
+  /*#region*/
   int slot = shape_lookup_slot(o->shape, key);
 
   if (slot >= 0) {
@@ -55,10 +69,11 @@ void obj_set(Obj *o, const char *key, Value v) {
 
   // --- Adding a new property ---
 
-  Shape *newshape = shape_transition_add(o->shape, key);
+  Shape *newshape = shape_transition_add(arena, o->shape, key);
+  if (!newshape) return;
   o->shape = newshape;
 
-  obj_ensure_capacity(o, o->shape->slot_count);
+  obj_ensure_capacity(arena, o, o->shape->slot_count);
 
   int new_slot = o->shape->slot_count - 1;
 
@@ -67,12 +82,15 @@ void obj_set(Obj *o, const char *key, Value v) {
 
   value_retain(v); // Retain new value
   o->slots[new_slot] = v;
+  /*#endregion*/
 }
 
-int obj_get(Obj *o, const char *key, Value *out) {
+int obj_get(Obj *o, const_lstr_t key, Value *out) {
+  /*#region*/
   int slot = shape_lookup_slot(o->shape, key);
   if (slot < 0)
     return 0;
   *out = o->slots[slot];
   return 1;
+  /*#endregion*/
 }

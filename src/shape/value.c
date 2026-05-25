@@ -52,10 +52,10 @@ Value val_bool(bool x) {
   return v;
 }
 
-Value val_str(lstr_t x) {
+Value val_str(const_lstr_t x) {
   Value v;
   v.tag = VAL_STRING;
-  v.as.p = x;
+  v.as.p = (void *)x;
   return v;
 }
 

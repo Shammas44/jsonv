@@ -1,85 +1,83 @@
 #include "arr.h"
+#include "mem.h"
 #include <stdlib.h>
+#include <string.h>
 
 void arr_free(Arr *a) {
-    // Release references to all contained values before freeing the array
-    for (int i = 0; i < a->length; i++) {
-        value_release(a->items[i]);
-    }
-    free(a->items);
-    free(a);
+  /*#region*/
+  // Memory is automatically collected on Arena resets/destructions, 
+  // so this acts strictly as a safe no-op to comply with the malloc/free ban.
+  (void)a;
+  /*#endregion*/
 }
 
 /* ------------------- Array ------------------- */
 
-Arr *arr_new(void) {
-    Arr *a = (Arr *)calloc(1, sizeof(Arr));
-    a->items = NULL;
-    a->capacity = 0;
-    a->length = 0;
-    a->refcount = 0;
-    return a;
+Arr *arr_new(Arena *arena) {
+  /*#region*/
+  // Conforms strictly to memory laws: allocates directly on the Arena memory pool
+  Arr *a = (Arr *)arena_alloc(arena, sizeof(Arr));
+  if (!a) return NULL;
+  a->items = NULL;
+  a->capacity = 0;
+  a->length = 0;
+  a->refcount = 0;
+  return a;
+  /*#endregion*/
 }
 
-void arr_ensure_capacity(Arr *a, int needed) {
-    if (a->capacity >= needed)
-        return;
-        
-    int newcap = a->capacity ? a->capacity : 4;
-    while (newcap < needed)
-        newcap *= 2;
+void arr_ensure_capacity(Arena *arena, Arr *a, int needed) {
+  /*#region*/
+  if (a->capacity >= needed)
+    return;
+      
+  int newcap = a->capacity ? a->capacity : 4;
+  while (newcap < needed)
+    newcap *= 2;
 
-    a->items = (Value *)realloc(a->items, (size_t)newcap * sizeof(Value));
-    
-    // Initialize new memory to undefined to prevent reading garbage data
-    for (int i = a->capacity; i < newcap; i++) {
-        a->items[i] = val_undefined();
-    }
-    a->capacity = newcap;
+  // Conforms strictly to memory laws: allocates a new dynamic slot buffer in the Arena
+  Value *new_items = (Value *)arena_alloc(arena, (size_t)newcap * sizeof(Value));
+  if (!new_items) return;
+  
+  // Copy old items
+  if (a->items && a->capacity > 0) {
+    memcpy(new_items, a->items, (size_t)a->capacity * sizeof(Value));
+  }
+
+  // Initialize new memory to undefined to prevent reading garbage data
+  for (int i = a->capacity; i < newcap; i++) {
+    new_items[i] = val_undefined();
+  }
+
+  a->items = new_items;
+  a->capacity = newcap;
+  /*#endregion*/
 }
 
-/*
-  Push value:
-  - Ensures capacity for at least one more element
-  - Retains the new value and appends it to the end
-*/
-void arr_push(Arr *a, Value v) {
-    arr_ensure_capacity(a, a->length + 1);
-    
-    value_retain(v); // Hold new reference
-    a->items[a->length] = v;
-    a->length++;
+void arr_set(Arena *arena, Arr *a, int index, Value v) {
+  /*#region*/
+  if (index < 0) return; // Prevent negative indices
+
+  // If setting beyond the current length, expand the array
+  if (index >= a->length) {
+    arr_ensure_capacity(arena, a, index + 1);
+    a->length = index + 1; // Update length to include the new index
+  }
+
+  // Existing property -> overwrite
+  Value old = a->items[index];
+  value_retain(v); // Hold new reference first
+  a->items[index] = v;
+  value_release(old); // Release old reference
+  /*#endregion*/
 }
 
-/*
-  Set value at index:
-  - If index is out of current bounds, grows the array
-  - Safely releases any old value and retains the new one
-*/
-void arr_set(Arr *a, int index, Value v) {
-    if (index < 0) return; // Prevent negative indices
-
-    // If setting beyond the current length, expand the array
-    if (index >= a->length) {
-        arr_ensure_capacity(a, index + 1);
-        a->length = index + 1; // Update length to include the new index
-    }
-
-    // Existing property -> overwrite
-    Value old = a->items[index];
-    value_retain(v); // Hold new reference first
-    a->items[index] = v;
-    value_release(old); // Release old reference
-}
-
-/*
-  Get value at index:
-  - Validates bounds before returning the value
-*/
 int arr_get(Arr *a, int index, Value *out) {
-    if (index < 0 || index >= a->length)
-        return 0; // Out of bounds
-        
-    *out = a->items[index];
-    return 1;
+  /*#region*/
+  if (index < 0 || index >= a->length)
+    return 0; // Out of bounds
+      
+  *out = a->items[index];
+  return 1;
+  /*#endregion*/
 }

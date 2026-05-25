@@ -1,6 +1,7 @@
 #ifndef _JSONV_ARR_H_INCLUDED
 #define _JSONV_ARR_H_INCLUDED
 #include "value.h"
+#include "arena.h"
 
 typedef struct {
   int refcount; // MUST be the very first field! 
@@ -9,10 +10,21 @@ typedef struct {
   int capacity;
 } Arr;
 
-Arr *arr_new(void);
+/* ------------------- Array ------------------- */
+
+/* Instantiate a new dynamic Array inside the Arena pool */
+Arr *arr_new(Arena *arena);
+
+/* Clean resources. On Arena systems, this acts as a safe no-op */
 void arr_free(Arr *a);
-void arr_ensure_capacity(Arr *a, int needed);
-void arr_set(Arr *a, int index, Value v);
+
+/* Ensure dynamic array capacity contiguously inside the Arena */
+void arr_ensure_capacity(Arena *arena, Arr *a, int needed);
+
+/* Set value at index inside the dynamic array, growing in the Arena if needed */
+void arr_set(Arena *arena, Arr *a, int index, Value v);
+
+/* Get value at index */
 int arr_get(Arr *a, int index, Value *out);
 
 #endif
