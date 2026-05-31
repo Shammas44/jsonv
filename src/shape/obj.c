@@ -14,10 +14,10 @@ void obj_free(Obj *o) {
 
 /* ------------------- Object ------------------- */
 
-Obj *obj_new(Arena *arena, Shape *root) {
+Obj *obj_new(Jsonv_Arena *arena, Shape *root) {
   /*#region*/
   // Conforms strictly to memory laws: allocates directly on the Arena memory pool
-  Obj *o = (Obj *)arena_alloc(arena, sizeof(Obj));
+  Obj *o = (Obj *)jsonv_arena_alloc(arena, sizeof(Obj));
   if (!o) return NULL;
   o->shape = root;
   o->slots = NULL;
@@ -27,7 +27,7 @@ Obj *obj_new(Arena *arena, Shape *root) {
   /*#endregion*/
 }
 
-void obj_ensure_capacity(Arena *arena, Obj *o, int needed) {
+void obj_ensure_capacity(Jsonv_Arena *arena, Obj *o, int needed) {
   /*#region*/
   if (o->capacity >= needed)
     return;
@@ -36,7 +36,7 @@ void obj_ensure_capacity(Arena *arena, Obj *o, int needed) {
     newcap *= 2;
 
   // Conforms strictly to memory laws: allocates a new slot buffer contiguously in the Arena
-  Value *new_slots = (Value *)arena_alloc(arena, (size_t)newcap * sizeof(Value));
+  Value *new_slots = (Value *)jsonv_arena_alloc(arena, (size_t)newcap * sizeof(Value));
   if (!new_slots) return;
 
   // Copy old slots
@@ -54,7 +54,7 @@ void obj_ensure_capacity(Arena *arena, Obj *o, int needed) {
   /*#endregion*/
 }
 
-void obj_set(Arena *arena, Obj *o, const_lstr_t key, Value v) {
+void obj_set(Jsonv_Arena *arena, Obj *o, const_lstr_t key, Value v) {
   /*#region*/
   int slot = shape_lookup_slot(o->shape, key);
 

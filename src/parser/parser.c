@@ -260,7 +260,7 @@ static void recursive_path_builder(ASTNode *pool, int node_idx, char **cursor,
   /*#endregion*/
 }
 
-void jsonv_ast(Lexer *lexer, Stack *nodes, Stack *scopes, Stack *controls,
+void parse_ast(Lexer *lexer, Stack *nodes, Stack *scopes, Stack *controls,
                set_t *set, KeyTreePool *key_pool) {
   /*#region*/
   nodes->top = -1;
@@ -479,7 +479,7 @@ void print_ast(Stack *nodes, int index, int indent) {
   /*#endregion*/
 }
 
-int jsonv_find_property(ASTNode *json_pool, int object_idx, const char *key) {
+int find_property(ASTNode *json_pool, int object_idx, const char *key) {
   /*#region*/
   ASTNode *obj = &json_pool[object_idx];
   if (obj->type != AST_OBJECT)
@@ -629,14 +629,14 @@ void print_ast_alphabetical(ASTNode *pool, KeyTreePool *key_pool, int node_idx,
   /*#endregion*/
 }
 
-static lstr_t arena_alloc_str(Arena *arena, const unsigned char *start, size_t len) {
+static lstr_t arena_alloc_str(Jsonv_Arena *arena, const unsigned char *start, size_t len) {
   /*#region*/
   // Safe overflow check
   if (len > SIZE_MAX - sizeof(StringHeader) - 1) {
     return NULL;
   }
   size_t total_size = sizeof(StringHeader) + len + 1;
-  StringHeader *str = (StringHeader *)arena_alloc(arena, total_size);
+  StringHeader *str = (StringHeader *)jsonv_arena_alloc(arena, total_size);
   if (!str) {
     return NULL;
   }
@@ -648,7 +648,7 @@ static lstr_t arena_alloc_str(Arena *arena, const unsigned char *start, size_t l
 }
 
 // Recursively converts an AST node into a runtime Value using chained arena allocations
-Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *shape_root, Arena *arena) {
+Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *shape_root, Jsonv_Arena *arena) {
   /*#region*/
     if (node_idx == -1) return val_null();
     
@@ -736,3 +736,54 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
     }
   /*#endregion*/
 }
+
+void parse_to_ast(
+    Jsonv_Arena *arena,
+    Lexer *lexer,
+    size_t json_length,
+    size_t est_value_count,
+    Stack *out_ast,
+    KeyTreePool *out_keytree,
+    set_t *out_set
+) {
+  /*#region*/
+  assert(arena);
+  assert(lexer);
+  assert(out_ast);
+  assert(out_keytree);
+  assert(out_set);
+
+  // 1. AST Stack
+  size_t ast_storage_size = json_length * sizeof(ASTNode);
+  void *ast_storage = jsonv_arena_alloc(arena, ast_storage_size);
+  stack_init(out_ast, sizeof(ASTNode), ast_storage, ast_storage_size);
+
+  // 2. Transient Scopes Stack
+  Stack scopes = {0};
+  size_t scopes_storage_size = json_length * sizeof(int);
+  void *scopes_storage = jsonv_arena_alloc(arena, scopes_storage_size);
+  stack_init(&scopes, sizeof(int), scopes_storage, scopes_storage_size);
+
+  // 3. Transient Control Stack
+  Stack control = {0};
+  size_t control_storage_size = json_length * sizeof(int);
+  void *control_storage = jsonv_arena_alloc(arena, control_storage_size);
+  stack_init(&control, sizeof(int), control_storage, control_storage_size);
+
+  // 4. Element Set (1.2 load factor via fast integer math)
+  size_t capacity = (est_value_count * 12) / 10;
+  size_t keys_capacity = set_next_power_of_two(capacity);
+  size_t set_storage_size = sizeof(entry_t) * keys_capacity;
+  entry_t *set_data = (entry_t *)jsonv_arena_alloc(arena, set_storage_size);
+  set_init(out_set, set_data, keys_capacity);
+
+  // 5. Key Tree
+  size_t key_storage_size = sizeof(KeyNode) * keys_capacity;
+  KeyNode *keytree_data = (KeyNode *)jsonv_arena_alloc(arena, key_storage_size);
+  key_tree_init(out_keytree, keytree_data, keys_capacity);
+
+  // 6. Invoke parser
+  parse_ast(lexer, out_ast, &scopes, &control, out_set, out_keytree);
+  /*#endregion*/
+}
+

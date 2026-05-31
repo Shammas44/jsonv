@@ -143,7 +143,7 @@ int main(int argc, char *argv[]) {
   json_data = read_file(input_filename, &len);
   assert(json_data);
 
-  Arena *arena = arena_create(4096, 1024 * 1024, 3 * 4096);
+  Jsonv_Arena *arena = arena_create(4096, 1024 * 1024, 3 * 4096);
   assert(arena);
   bool jq;
 
@@ -170,7 +170,7 @@ int main(int argc, char *argv[]) {
     jsonv_ctx_free(ctx);
   }
   free(json_data);
-  arena_destroy(arena);
+  jsonv_arena_destroy(arena);
   return 0;
   /*#endregion*/
 }

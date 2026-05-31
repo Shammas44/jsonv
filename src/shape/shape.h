@@ -1,5 +1,5 @@
-#ifndef _JSONV_SHAPE_H_INCLUDED
-#define _JSONV_SHAPE_H_INCLUDED
+#ifndef _JSONV_SHAPE_H
+#define _JSONV_SHAPE_H
 #include "value.h" // For lstr_t and const_lstr_t
 #include "arena.h"
 #include <stdbool.h>
@@ -24,20 +24,20 @@ struct Shape {
 };
 
 /* Create the empty/root shape inside the Arena memory pool */
-Shape* shape_root(Arena *arena);
+Shape* shape_root(Jsonv_Arena *arena);
 
 /* Find an existing transition: shape + key -> next_shape */
 Shape* shape_find_transition(Shape* s, const_lstr_t key);
 
 /* Add a transition entry to a shape inside the Arena pool */
-void shape_add_transition(Arena *arena, Shape* from, const_lstr_t key, Shape* to);
+void shape_add_transition(Jsonv_Arena *arena, Shape* from, const_lstr_t key, Shape* to);
 
 /*
   "Add property" operation:
   - If shape already has a transition for key, reuse it.
   - Otherwise create a new child shape inside the Arena with one more slot.
 */
-Shape* shape_transition_add(Arena *arena, Shape* s, const_lstr_t key);
+Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const_lstr_t key);
 
 /* Lookup a key's slot index in a shape by walking parent chain (O(1) len checks + memcmp) */
 int shape_lookup_slot(Shape* s, const_lstr_t key);

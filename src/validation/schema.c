@@ -165,12 +165,12 @@ int map_type_string_to_mask(Token t) {
 
 // --- MAIN COMPILER LOGIC ---
 
-SchemaRule *compile_schema(Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_count) {
+SchemaRule *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_count) {
   /*#region*/
   if (ast_count <= 0) return NULL;
   
   // Pre-allocate rules array on the Arena based on total AST count
-  SchemaRule *rules = (SchemaRule *)arena_alloc(arena, ast_count * sizeof(SchemaRule));
+  SchemaRule *rules = (SchemaRule *)jsonv_arena_alloc(arena, ast_count * sizeof(SchemaRule));
   if (!rules) return NULL;
   
   int rule_count = 0;
@@ -282,7 +282,7 @@ SchemaRule *compile_schema(Arena *arena, ASTNode *nodes, int ast_count, int root
         }
 
         // Allocate property rules on the Arena
-        rules[curr_idx].props = (PropertyRule *)arena_alloc(arena, count * sizeof(PropertyRule));
+        rules[curr_idx].props = (PropertyRule *)jsonv_arena_alloc(arena, count * sizeof(PropertyRule));
         if (count > 0 && !rules[curr_idx].props) {
           stack_destroy(&stack);
           return NULL;
@@ -317,7 +317,7 @@ SchemaRule *compile_schema(Arena *arena, ASTNode *nodes, int ast_count, int root
         }
 
         // Allocate required list on the Arena
-        rules[curr_idx].required = (Token *)arena_alloc(arena, count * sizeof(Token));
+        rules[curr_idx].required = (Token *)jsonv_arena_alloc(arena, count * sizeof(Token));
         if (count > 0 && !rules[curr_idx].required) {
           stack_destroy(&stack);
           return NULL;

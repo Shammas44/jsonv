@@ -43,7 +43,7 @@ AFL_CC := afl-clang-lto
 AFL_CFLAGS := -Wall -Wextra -Werror -g -fPIC -O3
 
 # --- Build Options ---
-BASE_CFLAGS := -Wall -Wextra -Werror
+BASE_CFLAGS := -Wall -Wextra -Werror -fvisibility=hidden
 ifeq ($(OPTION), prod)
   CFLAGS := $(BASE_CFLAGS) -O2
 else ifeq ($(OPTION), dev)
@@ -92,7 +92,7 @@ TEST_APP := $(BIN_DIR)/test_runner
 FUZZ_APP := $(BIN_DIR)/fuzz
 
 # --- Phony Targets ---
-.PHONY: all static shared test main_d run run_test clean install uninstall bear dirs main run_d fuzz run_fuzz run_docker_afl
+.PHONY: all static shared test main_d run run_test clean install uninstall bear dirs main run_d fuzz run_fuzz run_docker_afl inspect
 
 # --- Main Targets ---
 all: static
@@ -208,6 +208,10 @@ run_docker_afl:
 	@echo "Start AFL++ in docker"
 	docker build -t afl-jq .
 	docker run -ti -v $(shell pwd):/src afl-jq
+
+inspect:
+	@echo "Inspect exposed symbols"
+	@nm -gU $(LIB_DIR)/lib$(PROJECT_NAME).so
 
 # --- Clean Targets ---
 clean:

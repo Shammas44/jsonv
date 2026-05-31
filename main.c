@@ -112,98 +112,89 @@ static void event_log(Keys key, const char *format, ...) {
   /*#endregion*/
 }
 
-static void print_error(Jsonv_Context *ctx) {
+void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Arena *arena) {
   /*#region*/
-  E *error = jsonv_ctx_error(ctx);
-  char *path = error->path ? error->path : "";
-  event_log(Yellow, "Error %d: %s %s", error->type, error->description, path);
+  // Allocate a separate arena for the read-only schema compile phase
+  Jsonv_Arena *schema_arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
+  
+  Jsonv_Config config = {
+      .default_block_size = 1024,
+      .max_limit = 65536,
+      .shrink_at = 4096,
+      .max_depth = 10,
+      .max_values = 100,
+      .max_objects = 100,
+      .max_array = 100,
+      .max_string_bytes = 1000
+  };
+
+  E err = {0};
+  Jsonv_Schema *schema = NULL;
+  if (schema_json) {
+    schema = jsonv_schema_compile(schema_arena, schema_json, &config, &err);
+  }
+
+  // Create the request-local context on the execution arena
+  Jsonv_Context *ctx = jsonv_ctx_create(arena, &config);
+  if (!ctx) {
+    event_log(Red, "Error: Failed to create context");
+    jsonv_arena_destroy(schema_arena);
+    return;
+  }
+
+  Value parsed_val;
+  bool parsed = jsonv_ctx_parse_data(ctx, payload, &parsed_val);
+  if (parsed) {
+    event_log(Green, "Success: Payload parsed successfully.");
+    if (schema) {
+      bool valid = jsonv_ctx_validate(ctx, schema, parsed_val);
+      if (valid) {
+        event_log(Green, "Success: Payload is valid against the schema.");
+      } else {
+        const E *v_err = jsonv_ctx_get_error(ctx);
+        event_log(Red, "Validation Error %d: %s at %s", v_err->type, v_err->description, v_err->path ? v_err->path : "");
+      }
+    }
+  } else {
+    const E *p_err = jsonv_ctx_get_error(ctx);
+    event_log(Red, "Parse Error %d: %s at %s", p_err->type, p_err->description, p_err->path ? p_err->path : "");
+  }
+
+  // Deallocate schema arena to prevent memory leaks
+  jsonv_arena_destroy(schema_arena);
   /*#endregion*/
 }
 
-static bool logic(unsigned char *data, unsigned char *schema,
-                  Jsonv_Context **ctx, Arena *arena) {
+void single_file(char *path, unsigned char *schema, Jsonv_Arena *arena) {
   /*#region*/
-  (void)(schema);
-  bool e = jsonv_ctx_init(ctx, arena, NULL);
-  // if (e)
-  //   e = jsonv_ctx_prepare_schema(ctx, schema);
-  if (e)
-    e = jsonv_ctx_prepare_data(ctx, data);
-  // if (e)
-  //   e = jsonv_ctx_validate(*ctx);
-  return e;
-  /*#endregion*/
-}
-
-void single_file(char *path, unsigned char *schema, Arena *arena) {
-  /*#region*/
-  Jsonv_Context *ctx = NULL;
   size_t size;
   unsigned char *json_data = file_read(path, &size);
-  printf("input: %s\n", json_data);
-  bool e = logic(json_data, schema, &ctx, arena);
-  if (e) {
-    event_log(Green, "Succes: %s", "Payload parsed.");
-  } else {
-    print_error(ctx);
+  if (!json_data) {
+    event_log(Red, "Error: Failed to read file %s", path);
+    return;
   }
+  printf("input: %s\n", json_data);
+  single_payload(json_data, schema, arena);
   free(json_data);
-  if (ctx)
-    jsonv_ctx_free(ctx);
   /*#endregion*/
 }
 
-void multiple_files(char *path, unsigned char *schema, Arena *arena) {
+void multiple_files(char *path, unsigned char *schema, Jsonv_Arena *arena) {
   /*#region*/
-  (void)(schema);
   FilePathList files = file_list_recursively(path);
   printf("Found %zu files\n", files.count);
   for (size_t i = 0; i < files.count; i++) {
-    Jsonv_Context *ctx = NULL;
-
-    size_t size;
-    unsigned char *json_data = file_read(files.paths[i], &size);
-    bool e = logic(json_data, NULL, &ctx, arena);
     printf("=== CASE %zu ==============\n", i);
     printf("%s\n", files.paths[i]);
-    printf("input: %s\n", json_data);
-    if (e) {
-      event_log(Green, "Succes 1: %s", "$ Payload parsed.");
-    } else {
-      event_log(Red, "Error 1: %s", "$ Payload unvalid.");
-      // print_error(ctx);
-    }
-    free(json_data);
-    if (ctx)
-      jsonv_ctx_free(ctx);
+    single_file(files.paths[i], schema, arena);
   }
-
   file_path_list_free(&files);
-  /*#endregion*/
-}
-
-void single_payload(unsigned char *payload, unsigned char *schema,
-                    Arena *arena) {
-  /*#region*/
-  Jsonv_Context *ctx = NULL;
-  // printf("input: %s\n", payload);
-  bool e = logic(payload, schema, &ctx, arena);
-  (void)(e);
-  if (e) {
-    event_log(Green, "Succes: %s", "Payload parsed.");
-    jsonv_ctx_print_data(ctx);
-    jsonv_ctx_print_schema(ctx);
-  } else {
-    print_error(ctx);
-  }
-  if (ctx)
-    jsonv_ctx_free(ctx);
   /*#endregion*/
 }
 
 int main() {
   /*#region*/
-  Arena *arena = arena_new(KB(4), MB(1), KB(12));
+  Jsonv_Arena *arena = jsonv_arena_new(KB(4), MB(1), KB(12));
   _g_root = shape_root(arena);
   uint64_t start = now_ns();
   // for (int i = 0; i < 1000; i++) {
@@ -228,7 +219,7 @@ int main() {
   single_payload((unsigned char *)data, schema, arena);
   // single_file("./seed_corpus/valid2.json", schema, arena);
   // multiple_files("./output_fuzz/default/crashes", schema, arena);
-  arena_destroy(arena);
+  jsonv_arena_destroy(arena);
   free(schema);
   // }
 

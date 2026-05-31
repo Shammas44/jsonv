@@ -1,5 +1,6 @@
-#ifndef _JSONV_CTX_H_INCLUDED
-#define _JSONV_CTX_H_INCLUDED
+#ifndef _JSONV_CTX_H
+#define _JSONV_CTX_H
+#include "macro.h"
 #include "arena.h"
 #include "value.h"
 #include "validate.h"
@@ -18,34 +19,34 @@ typedef struct {
 typedef struct Jsonv_Schema Jsonv_Schema;
 typedef struct Jsonv_Context Jsonv_Context;
 
-Jsonv_Schema* jsonv_schema_compile(
-    Arena *schema_arena,
+JSONV_API Jsonv_Schema* jsonv_schema_compile(
+    Jsonv_Arena *schema_arena,
     const unsigned char *schema_json,
     const Jsonv_Config *config,
     E *out_error
 );
 
-Jsonv_Context* jsonv_ctx_create(
-    Arena *execution_arena,
+JSONV_API Jsonv_Context* jsonv_ctx_create(
+    Jsonv_Arena *execution_arena,
     const Jsonv_Config *config
 );
 
-bool jsonv_ctx_parse_data(
+JSONV_API bool jsonv_ctx_parse_data(
     Jsonv_Context *ctx,
     const unsigned char *data_json,
     Value *out_value
 );
 
-bool jsonv_ctx_validate(
+JSONV_API bool jsonv_ctx_validate(
     Jsonv_Context *ctx,
     const Jsonv_Schema *schema,
     Value data_value
 );
 
-const E* jsonv_ctx_get_error(const Jsonv_Context *ctx);
+JSONV_API const E* jsonv_ctx_get_error(const Jsonv_Context *ctx);
 
-Arena* jsonv_ctx_arena(const Jsonv_Context *ctx);
+JSONV_API Jsonv_Arena* jsonv_ctx_arena(const Jsonv_Context *ctx);
 
-void jsonv_ctx_reset(Jsonv_Context *ctx);
+JSONV_API void jsonv_ctx_reset(Jsonv_Context *ctx);
 
 #endif

@@ -48,7 +48,7 @@ static bool run_scenario(Stack *ast, unsigned char *input) {
   key_tree_init(&keytree, nodes, CAPACITY);
 
   bool out = true;
-  TRY { jsonv_ast(l, ast, &control, &children, &set, &keytree); }
+  TRY { parse_ast(l, ast, &control, &children, &set, &keytree); }
   ELSE { out = false; }
   END_TRY;
   return out;

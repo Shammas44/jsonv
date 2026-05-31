@@ -13,7 +13,6 @@
 #include "obj.h"
 #include "validate.h"
 #include <assert.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,7 +40,7 @@ struct Jsonv_Schema {
 };
 
 struct Jsonv_Context {
-  Arena *execution_arena;
+  Jsonv_Arena *execution_arena;
   E last_error;
   bool has_error;
   Jsonv_Config config;
@@ -54,7 +53,7 @@ struct Jsonv_Context {
 /* ------------------- Schema Compilation ------------------- */
 
 Jsonv_Schema* jsonv_schema_compile(
-    Arena *schema_arena,
+    Jsonv_Arena *schema_arena,
     const unsigned char *schema_json,
     const Jsonv_Config *config,
     E *out_error
@@ -80,15 +79,13 @@ Jsonv_Schema* jsonv_schema_compile(
   lexer_init(&lexer, schema_json, json_length);
 
   Stack ast = {0};
-  Stack scopes = {0};
-  Stack control = {0};
   set_t schema_set;
   KeyTreePool schema_keytree;
 
   TRY {
     // 1. PRE-SCAN
     JsonEstimate est = {0};
-    jsonv_prescan((const char *)schema_json, json_length, &est);
+    prescan((const char *)schema_json, json_length, &est);
     
     // 2. CHECK LIMITS IF CONFIG
     if (config) {
@@ -99,30 +96,8 @@ Jsonv_Schema* jsonv_schema_compile(
       if (est.string_bytes > config->max_string_bytes) RAISE(MAXIMUM_TOKEN_BYTES_REACHED);
     }
     
-    // 3. ALLOCATE SPACE
-    size_t ast_storage_size = json_length * sizeof(ASTNode);
-    void *ast_storage = arena_alloc(schema_arena, ast_storage_size);
-    stack_init(&ast, sizeof(ASTNode), ast_storage, ast_storage_size);
-
-    size_t scopes_storage_size = json_length * sizeof(int);
-    void *scopes_storage = arena_alloc(schema_arena, scopes_storage_size);
-    stack_init(&scopes, sizeof(int), scopes_storage, scopes_storage_size);
-
-    size_t control_storage_size = json_length * sizeof(int);
-    void *control_storage = arena_alloc(schema_arena, control_storage_size);
-    stack_init(&control, sizeof(int), control_storage, control_storage_size);
-
-    size_t keys_capacity = set_next_power_of_two(round(1.2 * est.value_count));
-    size_t set_storage_size = sizeof(entry_t) * keys_capacity;
-    entry_t *set_data = (entry_t *)arena_alloc(schema_arena, set_storage_size);
-    set_init(&schema_set, set_data, keys_capacity);
-
-    size_t key_storage_size = sizeof(KeyNode) * keys_capacity;
-    KeyNode *keytree_data = (KeyNode *)arena_alloc(schema_arena, key_storage_size);
-    key_tree_init(&schema_keytree, keytree_data, keys_capacity);
-
-    // 4. COMPILE AST
-    jsonv_ast(&lexer, &ast, &scopes, &control, &schema_set, &schema_keytree);
+    // 3. COMPILE AST (Consolidated Deep Seam)
+    parse_to_ast(schema_arena, &lexer, json_length, est.value_count, &ast, &schema_keytree, &schema_set);
 
     // 5. COMPILE SCHEMA
     int rule_count = 0;
@@ -132,7 +107,7 @@ Jsonv_Schema* jsonv_schema_compile(
     }
 
     // 6. ALLOCATE SCHEMA OBJECT
-    Jsonv_Schema *schema = (Jsonv_Schema *)arena_alloc(schema_arena, sizeof(Jsonv_Schema));
+    Jsonv_Schema *schema = (Jsonv_Schema *)jsonv_arena_alloc(schema_arena, sizeof(Jsonv_Schema));
     if (!schema) return NULL;
     schema->rules = rules;
     schema->rule_count = rule_count;
@@ -171,13 +146,13 @@ Jsonv_Schema* jsonv_schema_compile(
 /* ------------------- Context Operations ------------------- */
 
 Jsonv_Context* jsonv_ctx_create(
-    Arena *execution_arena,
+    Jsonv_Arena *execution_arena,
     const Jsonv_Config *config
 ) {
   /*#region*/
   if (!execution_arena) return NULL;
   
-  Jsonv_Context *ctx = (Jsonv_Context *)arena_alloc(execution_arena, sizeof(Jsonv_Context));
+  Jsonv_Context *ctx = (Jsonv_Context *)jsonv_arena_alloc(execution_arena, sizeof(Jsonv_Context));
   if (!ctx) return NULL;
   
   ctx->execution_arena = execution_arena;
@@ -222,13 +197,10 @@ bool jsonv_ctx_parse_data(
   Lexer lexer;
   lexer_init(&lexer, data_json, json_length);
 
-  Stack scopes = {0};
-  Stack control = {0};
-
   TRY {
     // 1. PRE-SCAN
     JsonEstimate est = {0};
-    jsonv_prescan((const char *)data_json, json_length, &est);
+    prescan((const char *)data_json, json_length, &est);
     
     // 2. CHECK LIMITS IF CONFIG
     if (ctx->config.max_depth > 0) {
@@ -239,30 +211,8 @@ bool jsonv_ctx_parse_data(
       if (est.string_bytes > ctx->config.max_string_bytes) RAISE(MAXIMUM_TOKEN_BYTES_REACHED);
     }
     
-    // 3. ALLOCATE AST
-    size_t ast_storage_size = json_length * sizeof(ASTNode);
-    void *ast_storage = arena_alloc(ctx->execution_arena, ast_storage_size);
-    stack_init(&ctx->data, sizeof(ASTNode), ast_storage, ast_storage_size);
-
-    size_t scopes_storage_size = json_length * sizeof(int);
-    void *scopes_storage = arena_alloc(ctx->execution_arena, scopes_storage_size);
-    stack_init(&scopes, sizeof(int), scopes_storage, scopes_storage_size);
-
-    size_t control_storage_size = json_length * sizeof(int);
-    void *control_storage = arena_alloc(ctx->execution_arena, control_storage_size);
-    stack_init(&control, sizeof(int), control_storage, control_storage_size);
-
-    size_t keys_capacity = set_next_power_of_two(round(1.2 * est.value_count));
-    size_t set_storage_size = sizeof(entry_t) * keys_capacity;
-    entry_t *set_data = (entry_t *)arena_alloc(ctx->execution_arena, set_storage_size);
-    set_init(&ctx->data_set, set_data, keys_capacity);
-
-    size_t key_storage_size = sizeof(KeyNode) * keys_capacity;
-    KeyNode *keytree_data = (KeyNode *)arena_alloc(ctx->execution_arena, key_storage_size);
-    key_tree_init(&ctx->data_keytree, keytree_data, keys_capacity);
-
-    // 4. COMPILE AST
-    jsonv_ast(&lexer, &ctx->data, &scopes, &control, &ctx->data_set, &ctx->data_keytree);
+    // 3. COMPILE AST (Consolidated Deep Seam)
+    parse_to_ast(ctx->execution_arena, &lexer, json_length, est.value_count, &ctx->data, &ctx->data_keytree, &ctx->data_set);
 
     // 5. CONVERT TO VALUE
     ASTNode *pool = (ASTNode *)ctx->data.data;
@@ -349,7 +299,7 @@ const E* jsonv_ctx_get_error(const Jsonv_Context *ctx) {
   /*#endregion*/
 }
 
-Arena* jsonv_ctx_arena(const Jsonv_Context *ctx) {
+Jsonv_Arena* jsonv_ctx_arena(const Jsonv_Context *ctx) {
   /*#region*/
   if (!ctx) return NULL;
   return ctx->execution_arena;
@@ -362,6 +312,6 @@ void jsonv_ctx_reset(Jsonv_Context *ctx) {
   memset(&ctx->last_error, 0, sizeof(E));
   ctx->has_error = false;
   // Reset the transient execution arena
-  arena_reset(ctx->execution_arena);
+  jsonv_arena_reset(ctx->execution_arena);
   /*#endregion*/
 }

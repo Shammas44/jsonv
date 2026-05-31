@@ -170,7 +170,7 @@ bool validate_value(
     for (int i = 0; i < arr->length; i++) {
       char item_path[64];
       snprintf(item_path, sizeof(item_path), "%s[%d]", path, i);
-      char *arena_path = (char *)arena_alloc(jsonv_ctx_arena(ctx), strlen(item_path) + 1);
+      char *arena_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), strlen(item_path) + 1);
       if (arena_path) {
         strcpy(arena_path, item_path);
       }
@@ -195,14 +195,14 @@ bool validate_value(
       }
       
       // Make a temporary null-terminated string to look up
-      char *req_key = (char *)arena_alloc(jsonv_ctx_arena(ctx), t_len + 1);
+      char *req_key = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), t_len + 1);
       if (!req_key) return false;
       memcpy(req_key, t_start, t_len);
       req_key[t_len] = '\0';
       
       // Construct length-prefixed StringHeader to match
       size_t total_size = sizeof(StringHeader) + t_len + 1;
-      StringHeader *header = (StringHeader *)arena_alloc(jsonv_ctx_arena(ctx), total_size);
+      StringHeader *header = (StringHeader *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), total_size);
       if (!header) return false;
       header->length = (uint32_t)t_len;
       memcpy(header->data, t_start, t_len);
@@ -238,7 +238,7 @@ bool validate_value(
         size_t p_len = strlen(path);
         size_t k_len = ((const StringHeader *)key - 1)->length;
         size_t needed = p_len + k_len + 2;
-        char *new_path = (char *)arena_alloc(jsonv_ctx_arena(ctx), needed);
+        char *new_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), needed);
         if (new_path) {
           if (p_len > 0) {
             snprintf(new_path, needed, "%s.%.*s", path, (int)k_len, key);

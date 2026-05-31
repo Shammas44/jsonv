@@ -29,10 +29,10 @@ Shape* shape_find_transition(Shape* s, const_lstr_t key) {
   /*#endregion*/
 }
 
-void shape_add_transition(Arena *arena, Shape* from, const_lstr_t key, Shape* to) {
+void shape_add_transition(Jsonv_Arena *arena, Shape* from, const_lstr_t key, Shape* to) {
   /*#region*/
   // Conforms strictly to memory laws: Allocates on Arena, no standard malloc/calloc/free
-  Transition* t = (Transition*)arena_alloc(arena, sizeof(Transition));
+  Transition* t = (Transition*)jsonv_arena_alloc(arena, sizeof(Transition));
   if (!t) return;
   t->key = key;
   t->next_shape = to;
@@ -41,12 +41,12 @@ void shape_add_transition(Arena *arena, Shape* from, const_lstr_t key, Shape* to
   /*#endregion*/
 }
 
-Shape* shape_transition_add(Arena *arena, Shape* s, const_lstr_t key) {
+Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const_lstr_t key) {
   /*#region*/
   Shape* existing = shape_find_transition(s, key);
   if (existing) return existing;
 
-  Shape* child = (Shape*)arena_alloc(arena, sizeof(Shape));
+  Shape* child = (Shape*)jsonv_arena_alloc(arena, sizeof(Shape));
   if (!child) return NULL;
   child->parent = s;
   child->last_key = key;
@@ -61,9 +61,9 @@ Shape* shape_transition_add(Arena *arena, Shape* s, const_lstr_t key) {
 
 /* ------------------- Shape ------------------- */
 
-Shape* shape_root(Arena *arena) {
+Shape* shape_root(Jsonv_Arena *arena) {
   /*#region*/
-  Shape* s = (Shape*)arena_alloc(arena, sizeof(Shape));
+  Shape* s = (Shape*)jsonv_arena_alloc(arena, sizeof(Shape));
   if (!s) return NULL;
   s->parent = NULL;
   s->last_key = NULL;

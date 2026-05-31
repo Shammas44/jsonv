@@ -1,5 +1,5 @@
-#ifndef VALUE_H
-#define VALUE_H
+#ifndef _JSONV_VALUE_H
+#define _JSONV_VALUE_H
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>

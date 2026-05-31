@@ -12,6 +12,6 @@ typedef struct {
   size_t string_bytes;
 } JsonEstimate;
 
-void jsonv_prescan(const char *s, size_t len, JsonEstimate *out);
+void prescan(const char *s, size_t len, JsonEstimate *out);
 
 #endif

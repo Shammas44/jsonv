@@ -11,14 +11,14 @@ extern const Except ARENA_LIMIT_REACHED;
 
 #define T Shape
 
-static Arena *arena = NULL;
+static Jsonv_Arena *arena = NULL;
 static Shape *root = NULL;
 
 static void init(void) {
   /*#region*/
   test_init();
   // Allocate arena with 1MB ceiling limit
-  arena = arena_new(4096, 1024 * 1024, 12 * 1024);
+  arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
   cr_assert_not_null(arena, "Arena allocation failed");
   root = shape_root(arena);
   cr_assert_not_null(root, "Root shape allocation failed");
@@ -28,7 +28,7 @@ static void init(void) {
 static void fini(void) {
   /*#region*/
   if (arena) {
-    arena_destroy(arena);
+    jsonv_arena_destroy(arena);
     arena = NULL;
   }
   test_fini();
@@ -36,11 +36,11 @@ static void fini(void) {
 }
 
 // Helper to construct a temporary const_lstr_t inside tests
-static const_lstr_t make_temp_lstr(Arena *arena, const char *s) {
+static const_lstr_t make_temp_lstr(Jsonv_Arena *arena, const char *s) {
   /*#region*/
   size_t len = strlen(s);
   size_t total_size = sizeof(StringHeader) + len + 1;
-  StringHeader *header = (StringHeader *)arena_alloc(arena, total_size);
+  StringHeader *header = (StringHeader *)jsonv_arena_alloc(arena, total_size);
   cr_assert_not_null(header);
   header->length = (uint32_t)len;
   memcpy(header->data, s, len);
@@ -160,8 +160,8 @@ END_TIMED_TEST
 TIMED_TEST(T, tiny_arena_limits_trigger_safe_oom, init, fini)
 /*#region*/
 // Recreate arena with ultra-tiny memory limit (500 bytes)
-arena_destroy(arena);
-arena = arena_new(256, 512, 512);
+jsonv_arena_destroy(arena);
+arena = jsonv_arena_new(256, 512, 512);
 cr_assert_not_null(arena);
 
 root = shape_root(arena);

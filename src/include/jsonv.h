@@ -1,6 +1,5 @@
-#ifndef _JSONV_H_INCLUDED
-#define _JSONV_H_INCLUDED
-#define JSMN_STRICT 1
+#ifndef _JSONV_H
+#define _JSONV_H
 #include "ctx.h"
 #include "arena.h"
 #include "error.h"

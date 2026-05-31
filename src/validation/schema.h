@@ -5,7 +5,7 @@
 
 typedef struct SchemaRule SchemaRule;
 
-SchemaRule *compile_schema(Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_count);
+SchemaRule *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_count);
 void print_schema_rules(SchemaRule *rules, int count);
 
 #endif

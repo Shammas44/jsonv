@@ -8,8 +8,8 @@
 
 #define T Ctx
 
-static Arena *schema_arena = NULL;
-static Arena *execution_arena = NULL;
+static Jsonv_Arena *schema_arena = NULL;
+static Jsonv_Arena *execution_arena = NULL;
 
 extern const Except ARENA_LIMIT_REACHED;
 extern const Except MALFORMED_JSON;
@@ -18,8 +18,8 @@ static void init(void) {
   /*#region*/
   test_init();
   // Allocate arenas: 4KB blocks, 1MB max limit, 12KB trim threshold
-  schema_arena = arena_new(4096, 1024 * 1024, 12 * 1024);
-  execution_arena = arena_new(4096, 1024 * 1024, 12 * 1024);
+  schema_arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
+  execution_arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
   cr_assert_not_null(schema_arena);
   cr_assert_not_null(execution_arena);
   /*#endregion*/
@@ -28,11 +28,11 @@ static void init(void) {
 static void fini(void) {
   /*#region*/
   if (schema_arena) {
-    arena_destroy(schema_arena);
+    jsonv_arena_destroy(schema_arena);
     schema_arena = NULL;
   }
   if (execution_arena) {
-    arena_destroy(execution_arena);
+    jsonv_arena_destroy(execution_arena);
     execution_arena = NULL;
   }
   test_fini();
@@ -248,8 +248,8 @@ END_TIMED_TEST
 TIMED_TEST(T, low_memory_limits_fail_gracefully, init, fini)
 /*#region*/
 // Recreate ultra-tiny execution arena (256 bytes) to force OOM
-arena_destroy(execution_arena);
-execution_arena = arena_new(128, 256, 256);
+jsonv_arena_destroy(execution_arena);
+execution_arena = jsonv_arena_new(128, 256, 256);
 cr_assert_not_null(execution_arena);
 
 Jsonv_Config config = {

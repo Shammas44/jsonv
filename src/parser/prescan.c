@@ -4,7 +4,7 @@
 
 extern const Except MALFORMED_JSON;
 
-void jsonv_prescan(const char *s, size_t len, JsonEstimate *out) {
+void prescan(const char *s, size_t len, JsonEstimate *out) {
   /*#region*/
   memset(out, 0, sizeof(*out));
 

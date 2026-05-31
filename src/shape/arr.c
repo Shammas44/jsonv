@@ -13,10 +13,10 @@ void arr_free(Arr *a) {
 
 /* ------------------- Array ------------------- */
 
-Arr *arr_new(Arena *arena) {
+Arr *arr_new(Jsonv_Arena *arena) {
   /*#region*/
   // Conforms strictly to memory laws: allocates directly on the Arena memory pool
-  Arr *a = (Arr *)arena_alloc(arena, sizeof(Arr));
+  Arr *a = (Arr *)jsonv_arena_alloc(arena, sizeof(Arr));
   if (!a) return NULL;
   a->items = NULL;
   a->capacity = 0;
@@ -26,7 +26,7 @@ Arr *arr_new(Arena *arena) {
   /*#endregion*/
 }
 
-void arr_ensure_capacity(Arena *arena, Arr *a, int needed) {
+void arr_ensure_capacity(Jsonv_Arena *arena, Arr *a, int needed) {
   /*#region*/
   if (a->capacity >= needed)
     return;
@@ -36,7 +36,7 @@ void arr_ensure_capacity(Arena *arena, Arr *a, int needed) {
     newcap *= 2;
 
   // Conforms strictly to memory laws: allocates a new dynamic slot buffer in the Arena
-  Value *new_items = (Value *)arena_alloc(arena, (size_t)newcap * sizeof(Value));
+  Value *new_items = (Value *)jsonv_arena_alloc(arena, (size_t)newcap * sizeof(Value));
   if (!new_items) return;
   
   // Copy old items
@@ -54,7 +54,7 @@ void arr_ensure_capacity(Arena *arena, Arr *a, int needed) {
   /*#endregion*/
 }
 
-void arr_set(Arena *arena, Arr *a, int index, Value v) {
+void arr_set(Jsonv_Arena *arena, Arr *a, int index, Value v) {
   /*#region*/
   if (index < 0) return; // Prevent negative indices
 

@@ -1,8 +1,28 @@
-#include "arena.h"
+#include "arena.internal.h"
+#include "assert.h"
 #include "mem.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+typedef struct Jsonv_ArenaBlock {
+  struct Jsonv_ArenaBlock *next;
+  size_t capacity;
+  size_t used;
+  // The compiler will now insert 8 bytes of padding here automatically
+  // so that 'data' starts at an offset divisible by 16.
+  alignas(ARENA_ALIGNMENT) uint8_t data[];
+} Jsonv_ArenaBlock;
+
+typedef struct Jsonv_Arena {
+  Jsonv_ArenaBlock *head;
+  Jsonv_ArenaBlock *current;
+
+  size_t default_block_size; // Standard allocation unit (e.g., 4KB)
+  size_t max_limit; // Hard Ceiling: Stop parsing if we hit this (e.g., 10MB)
+  size_t shrink_at; // Soft Ceiling: Free memory if we exceed this (e.g., 1MB)
+  size_t total_reserved; // Current total tracked memory
+} Jsonv_Arena;
 
 extern const Except ARENA_LIMIT_REACHED;
 
@@ -16,13 +36,13 @@ static size_t align_up(size_t size) {
   /*#endregion*/
 }
 
-static ArenaBlock *arena_create_block(size_t capacity) {
+static Jsonv_ArenaBlock *arena_create_block(size_t capacity) {
   /*#region*/
   // Safe overflow check for block structure allocation size
-  if (capacity > SIZE_MAX - sizeof(ArenaBlock)) {
+  if (capacity > SIZE_MAX - sizeof(Jsonv_ArenaBlock)) {
     return NULL;
   }
-  ArenaBlock *block = ALLOC(sizeof(ArenaBlock) + capacity);
+  Jsonv_ArenaBlock *block = ALLOC(sizeof(Jsonv_ArenaBlock) + capacity);
   if (block) {
     block->next = NULL;
     block->capacity = capacity;
@@ -32,10 +52,10 @@ static ArenaBlock *arena_create_block(size_t capacity) {
   /*#endregion*/
 }
 
-Arena *arena_new(size_t default_block_size, size_t max_limit,
-                 size_t shrink_at) {
+Jsonv_Arena *jsonv_arena_new(size_t default_block_size, size_t max_limit,
+                       size_t shrink_at) {
   /*#region*/
-  Arena *arena = ALLOC(sizeof(Arena));
+  Jsonv_Arena *arena = ALLOC(sizeof(Jsonv_Arena));
   if (!arena)
     return NULL;
 
@@ -44,11 +64,11 @@ Arena *arena_new(size_t default_block_size, size_t max_limit,
   arena->shrink_at = shrink_at;
 
   // Safe check for initial ceiling limits
-  if (default_block_size > SIZE_MAX - sizeof(ArenaBlock)) {
+  if (default_block_size > SIZE_MAX - sizeof(Jsonv_ArenaBlock)) {
     FREE(arena);
     return NULL;
   }
-  size_t first_block_size = sizeof(ArenaBlock) + default_block_size;
+  size_t first_block_size = sizeof(Jsonv_ArenaBlock) + default_block_size;
   if (first_block_size > max_limit) {
     FREE(arena);
     return NULL;
@@ -66,7 +86,7 @@ Arena *arena_new(size_t default_block_size, size_t max_limit,
   /*#endregion*/
 }
 
-void *arena_alloc(Arena *arena, size_t size) {
+void *jsonv_arena_alloc(Jsonv_Arena *arena, size_t size) {
   /*#region*/
   size_t aligned_size = align_up(size);
   if (aligned_size == 0 && size > 0) {
@@ -87,10 +107,10 @@ void *arena_alloc(Arena *arena, size_t size) {
     new_capacity = aligned_size;
   }
 
-  if (new_capacity > SIZE_MAX - sizeof(ArenaBlock)) {
+  if (new_capacity > SIZE_MAX - sizeof(Jsonv_ArenaBlock)) {
     return NULL;
   }
-  size_t block_struct_size = sizeof(ArenaBlock) + new_capacity;
+  size_t block_struct_size = sizeof(Jsonv_ArenaBlock) + new_capacity;
 
   // 3. Security Hard Limit Check (protects against addition overflows)
   if (arena->total_reserved > arena->max_limit - block_struct_size) {
@@ -100,7 +120,7 @@ void *arena_alloc(Arena *arena, size_t size) {
 
   // 4. Recycle or Create
   if (arena->current->next == NULL) {
-    ArenaBlock *new_block = arena_create_block(new_capacity);
+    Jsonv_ArenaBlock *new_block = arena_create_block(new_capacity);
     if (!new_block)
       return NULL;
 
@@ -111,7 +131,7 @@ void *arena_alloc(Arena *arena, size_t size) {
     if (arena->current->next->capacity < aligned_size) {
       // OPTIMIZATION: Non-destructive insert.
       // We insert the larger block and preserve the downstream chain.
-      ArenaBlock *new_block = arena_create_block(new_capacity);
+      Jsonv_ArenaBlock *new_block = arena_create_block(new_capacity);
       if (!new_block)
         return NULL;
 
@@ -129,24 +149,25 @@ void *arena_alloc(Arena *arena, size_t size) {
   /*#endregion*/
 }
 
-void arena_reset(Arena *arena) {
+void jsonv_arena_reset(Jsonv_Arena *arena) {
   /*#region*/
   // SMART TRIM LOGIC
   if (arena->total_reserved > arena->shrink_at) {
     // 1. Keep the HEAD, free the rest using safe FREE macro
-    ArenaBlock *victim = arena->head->next;
+    Jsonv_ArenaBlock *victim = arena->head->next;
     while (victim) {
-      ArenaBlock *next = victim->next;
+      Jsonv_ArenaBlock *next = victim->next;
       FREE(victim);
       victim = next;
     }
     arena->head->next = NULL;
 
     // 2. Reset calculations
-    arena->total_reserved = sizeof(ArenaBlock) + arena->head->capacity;
+    arena->total_reserved = sizeof(Jsonv_ArenaBlock) + arena->head->capacity;
   } else {
     // OPTIMIZATION: Fast O(1) path.
-    // No loop traversal needed! Downstream .used is safely overwritten on demand.
+    // No loop traversal needed! Downstream .used is safely overwritten on
+    // demand.
   }
 
   // 3. Reset pointer to start
@@ -155,17 +176,80 @@ void arena_reset(Arena *arena) {
   /*#endregion*/
 }
 
-void arena_destroy(Arena *arena) {
+void jsonv_arena_destroy(Jsonv_Arena *arena) {
   /*#region*/
   if (!arena)
     return;
 
-  ArenaBlock *block = arena->head;
+  Jsonv_ArenaBlock *block = arena->head;
   while (block) {
-    ArenaBlock *next = block->next;
+    Jsonv_ArenaBlock *next = block->next;
     FREE(block);
     block = next;
   }
   FREE(arena);
+  /*#endregion*/
+}
+
+Jsonv_ArenaBlock *arena_get_head(Jsonv_Arena *arena) {
+  /*#region*/
+  assert(arena);
+  return arena->head;
+  /*#endregion*/
+}
+
+Jsonv_ArenaBlock *arena_get_current(Jsonv_Arena *arena) {
+  /*#region*/
+  assert(arena);
+  return arena->current;
+  /*#endregion*/
+}
+
+size_t arena_get_default_block_size(Jsonv_Arena *arena) {
+  /*#region*/
+  assert(arena);
+  return arena->default_block_size;
+  /*#endregion*/
+}
+
+size_t arena_get_max_limit(Jsonv_Arena *arena) {
+  /*#region*/
+  assert(arena);
+  return arena->default_block_size;
+  /*#endregion*/
+}
+
+size_t arena_get_shrink_at(Jsonv_Arena *arena) {
+  /*#region*/
+  assert(arena);
+  return arena->shrink_at;
+  /*#endregion*/
+}
+
+size_t arena_get_total_reserved(Jsonv_Arena *arena) {
+  /*#region*/
+  assert(arena);
+  return arena->total_reserved;
+  /*#endregion*/
+}
+
+Jsonv_ArenaBlock *arena_block_get_next(Jsonv_ArenaBlock *block) {
+  /*#region*/
+  assert(block);
+  return block->next;
+  /*#endregion*/
+}
+
+size_t arena_block_get_capacity(Jsonv_ArenaBlock *block) {
+  /*#region*/
+  assert(block);
+  return block->capacity;
+  /*#endregion*/
+}
+
+size_t arena_block_get_used(Jsonv_ArenaBlock *block) {
+  /*#region*/
+  assert(block);
+  return block->used;
   /*#endregion*/
 }

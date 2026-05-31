@@ -1,5 +1,5 @@
-#ifndef _JSONV_OBJ_H_INCLUDED
-#define _JSONV_OBJ_H_INCLUDED
+#ifndef _JSONV_OBJ_H
+#define _JSONV_OBJ_H
 #include "shape.h"
 #include "value.h"
 #include "arena.h"
@@ -14,7 +14,7 @@ typedef struct {
 /* ------------------- Object ------------------- */
 
 /* Instantiate a new dynamic Object inside the Arena pool */
-Obj *obj_new(Arena *arena, Shape *root);
+Obj *obj_new(Jsonv_Arena *arena, Shape *root);
 
 /* 
   Release resources. On Arena systems, memory is automatically reclaimed,
@@ -23,14 +23,14 @@ Obj *obj_new(Arena *arena, Shape *root);
 void obj_free(Obj *o);
 
 /* Ensure slot array capacity using Arena allocations */
-void obj_ensure_capacity(Arena *arena, Obj *o, int needed);
+void obj_ensure_capacity(Jsonv_Arena *arena, Obj *o, int needed);
 
 /*
   Set property:
   - If key already exists in current shape: write to slot
   - Else: transition to a new shape inside the Arena, grow slot storage contiguously in the Arena, write
 */
-void obj_set(Arena *arena, Obj *o, const_lstr_t key, Value v);
+void obj_set(Jsonv_Arena *arena, Obj *o, const_lstr_t key, Value v);
 
 /* Get property value using fast-path O(1) shape slot lookups */
 int obj_get(Obj *o, const_lstr_t key, Value *out);
