@@ -1,7 +1,5 @@
 #include "file.h"
 #include "jsonv.h"
-#include "shape.h"
-#include "global.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -18,7 +16,7 @@
 #define KB(x) 1024 * x
 #define MB(x) 1024 * 1024 * x
 
-Shape *_g_root = NULL;
+Jsonv_Shape *_g_root = NULL;
 
 static char *colors[] = {
     "\x1b[30m", "\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[34m",
@@ -142,7 +140,7 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
     return;
   }
 
-  Value parsed_val;
+  Jsonv_Value parsed_val;
   bool parsed = jsonv_ctx_parse_data(ctx, payload, &parsed_val);
   if (parsed) {
     event_log(Green, "Success: Payload parsed successfully.");
@@ -195,7 +193,7 @@ void multiple_files(char *path, unsigned char *schema, Jsonv_Arena *arena) {
 int main() {
   /*#region*/
   Jsonv_Arena *arena = jsonv_arena_new(KB(4), MB(1), KB(12));
-  _g_root = shape_root(arena);
+  _g_root = jsonv_shape_root(arena);
   uint64_t start = now_ns();
   // for (int i = 0; i < 1000; i++) {
   // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold

@@ -3,4 +3,5 @@
 #include "ctx.h"
 #include "arena.h"
 #include "error.h"
+#include "shape.h"
 #endif

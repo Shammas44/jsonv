@@ -1,16 +1,12 @@
 #include "ctx.h"
-#include "arr.h"
+#include "shape.internal.h"
 #include "parser.h"
 #include "set.h"
 #include "keytree.h"
 #include "mem.h"
 #include "prescan.h"
 #include "schema.h"
-#include "path.h"
 #include "global.h"
-#include "shape.h"
-#include "print.h"
-#include "obj.h"
 #include "validate.h"
 #include <assert.h>
 #include <stdio.h>

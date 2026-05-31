@@ -1,7 +1,4 @@
-#include "value.h"
-#include "shape.h"
-#include "obj.h"
-#include "arr.h"
+#include "shape.internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -15,24 +12,33 @@ static void print_array(Arr *a, Visited *visited);
 static void print_value_internal(Value v, Visited *visited);
 
 static int visited_contains(Visited *v, const void *ptr) {
+  /*#region*/
   while (v) {
     if (v->ptr == ptr)
       return 1;
     v = v->next;
   }
   return 0;
+  /*#endregion*/
 }
 
 static Visited *visited_push(Visited *v, const void *ptr) {
+  /*#region*/
   Visited *node = malloc(sizeof(Visited));
   node->ptr = ptr;
   node->next = v;
   return node;
+  /*#endregion*/
 }
 
-void print_value(Value v) { print_value_internal(v, NULL); }
+void print_value(Value v) {
+  /*#region*/
+  print_value_internal(v, NULL);
+  /*#endregion*/
+}
 
 static void print_value_internal(Value v, Visited *visited) {
+  /*#region*/
   switch (v.tag) {
 
   case VAL_UNDEFINED:
@@ -71,9 +77,11 @@ static void print_value_internal(Value v, Visited *visited) {
     printf("<?>");
     break;
   }
+  /*#endregion*/
 }
 
 static void print_object(Obj *o, Visited *visited) {
+  /*#region*/
   if (visited_contains(visited, o)) {
     printf("{<cycle>}");
     return;
@@ -86,7 +94,7 @@ static void print_object(Obj *o, Visited *visited) {
   int first = 1;
 
   for (int i = 0; i < o->shape->slot_count; i++) {
-    const char *key = shape_get_key_at(o->shape, i); // you must implement this
+    const char *key = shape_get_key_at(o->shape, i);
     Value v = o->slots[i];
 
     if (!first)
@@ -98,9 +106,11 @@ static void print_object(Obj *o, Visited *visited) {
   }
 
   printf("}");
+  /*#endregion*/
 }
 
 static void print_array(Arr *a, Visited *visited) {
+  /*#region*/
   if (visited_contains(visited, a)) {
     printf("[<cycle>]");
     return;
@@ -117,13 +127,14 @@ static void print_array(Arr *a, Visited *visited) {
   }
 
   printf("]");
+  /*#endregion*/
 }
 
 void print_shape(Shape *s) {
-  // #region
+  /*#region*/
   printf("Shape@%p slots=%d\n", (void *)s, s->slot_count);
   for (Shape *cur = s; cur && cur->last_key; cur = cur->parent) {
     printf("  key '%s' -> slot %d\n", cur->last_key, cur->last_slot);
   }
-  // #endregion
+  /*#endregion*/
 }

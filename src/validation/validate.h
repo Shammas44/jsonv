@@ -2,7 +2,7 @@
 #define _jsonv_UTILS_H_INCLUDED
 #include "except.h"
 #include "stack.h"
-#include "value.h"
+#include "shape.h"
 
 #define JSONV_SCHEMA_IS_VALID -1
 

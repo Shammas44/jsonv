@@ -1,8 +1,7 @@
 #ifndef _JSONV_PARSER_H_INCLUDED
 #define _JSONV_PARSER_H_INCLUDED
 #include "ast.h"
-#include "value.h"
-#include "shape.h"
+#include "shape.internal.h"
 #include "keytree.h"
 #include "lexer.h"
 #include "set.h"

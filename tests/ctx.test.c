@@ -1,12 +1,14 @@
 #include "ctx.h"
 #include "arena.h"
-#include "value.h"
+#include "shape.h"
 #include "except.h"
 #include "utils.h"
 #include <criterion/criterion.h>
 #include <string.h>
 
 #define T Ctx
+
+typedef Jsonv_Value Value;
 
 static Jsonv_Arena *schema_arena = NULL;
 static Jsonv_Arena *execution_arena = NULL;
@@ -138,7 +140,7 @@ Value parsed_val;
 
 bool success = jsonv_ctx_parse_data(ctx, data_json, &parsed_val);
 cr_assert(success, "Parsing valid JSON payload should succeed");
-cr_expect_eq(parsed_val.tag, VAL_OBJ, "Parsed value should be an Object");
+cr_expect_eq(parsed_val.tag, JSONV_VAL_OBJ, "Parsed value should be an Object");
 /*#endregion*/
 END_TIMED_TEST
 

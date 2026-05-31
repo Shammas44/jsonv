@@ -2,7 +2,7 @@
 #define _JSONV_CTX_H
 #include "macro.h"
 #include "arena.h"
-#include "value.h"
+#include "shape.h"
 #include "validate.h"
 
 typedef struct {
@@ -34,13 +34,13 @@ JSONV_API Jsonv_Context* jsonv_ctx_create(
 JSONV_API bool jsonv_ctx_parse_data(
     Jsonv_Context *ctx,
     const unsigned char *data_json,
-    Value *out_value
+    Jsonv_Value *out_value
 );
 
 JSONV_API bool jsonv_ctx_validate(
     Jsonv_Context *ctx,
     const Jsonv_Schema *schema,
-    Value data_value
+    Jsonv_Value data_value
 );
 
 JSONV_API const E* jsonv_ctx_get_error(const Jsonv_Context *ctx);

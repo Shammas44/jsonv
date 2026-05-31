@@ -1,7 +1,4 @@
 #include "parser.h"
-#include "shape.h"
-#include "obj.h"
-#include "arr.h"
 #include "assert.h"
 #include "keytree.h"
 #include "lexer.h"

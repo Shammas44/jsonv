@@ -1,6 +1,4 @@
-#include "shape.h"
-#include "obj.h"
-#include "value.h"
+#include "shape.internal.h"
 #include "arena.h"
 #include "except.h"
 #include "utils.h"
@@ -36,7 +34,7 @@ static void fini(void) {
 }
 
 // Helper to construct a temporary const_lstr_t inside tests
-static const_lstr_t make_temp_lstr(Jsonv_Arena *arena, const char *s) {
+static const char *make_temp_lstr(Jsonv_Arena *arena, const char *s) {
   /*#region*/
   size_t len = strlen(s);
   size_t total_size = sizeof(StringHeader) + len + 1;
@@ -45,7 +43,7 @@ static const_lstr_t make_temp_lstr(Jsonv_Arena *arena, const char *s) {
   header->length = (uint32_t)len;
   memcpy(header->data, s, len);
   header->data[len] = '\0';
-  return (const_lstr_t)header->data;
+  return (const char *)header->data;
   /*#endregion*/
 }
 
@@ -55,29 +53,29 @@ static const_lstr_t make_temp_lstr(Jsonv_Arena *arena, const char *s) {
 
 TIMED_TEST(T, root_has_no_parent_and_zero_slots, init, fini)
 /*#region*/
-cr_expect_null(root->parent, "Root shape parent should be NULL");
-cr_expect_eq(root->slot_count, 0, "Root shape should have 0 slots");
-cr_expect_eq(root->last_slot, -1, "Root shape last slot index should be -1");
+cr_expect_null(shape_get_parent(root), "Root shape parent should be NULL");
+cr_expect_eq(shape_get_slot_count(root), 0, "Root shape should have 0 slots");
+cr_expect_eq(shape_get_last_slot(root), -1, "Root shape last slot index should be -1");
 /*#endregion*/
 END_TIMED_TEST
 
 TIMED_TEST(T, add_transition_creates_child_and_allocates_slot, init, fini)
 /*#region*/
-const_lstr_t key = make_temp_lstr(arena, "name");
+const char *key = make_temp_lstr(arena, "name");
 Shape *s1 = shape_transition_add(arena, root, key);
 
 cr_assert_not_null(s1, "Transition s0 -> s1 should succeed");
-cr_expect_eq(s1->parent, root, "s1 parent should be root");
-cr_expect_eq(s1->slot_count, 1, "s1 slot count should be 1");
-cr_expect_eq(s1->last_slot, 0, "s1 last slot should be 0");
-cr_expect_str_eq(s1->last_key, "name", "s1 last key should be name");
+cr_expect_eq(shape_get_parent(s1), root, "s1 parent should be root");
+cr_expect_eq(shape_get_slot_count(s1), 1, "s1 slot count should be 1");
+cr_expect_eq(shape_get_last_slot(s1), 0, "s1 last slot should be 0");
+cr_expect_str_eq(shape_get_last_key(s1), "name", "s1 last key should be name");
 /*#endregion*/
 END_TIMED_TEST
 
 TIMED_TEST(T, shape_sharing_guarantees_identical_pointers, init, fini)
 /*#region*/
-const_lstr_t key_name = make_temp_lstr(arena, "name");
-const_lstr_t key_age = make_temp_lstr(arena, "age");
+const char *key_name = make_temp_lstr(arena, "name");
+const char *key_age = make_temp_lstr(arena, "age");
 
 // Path A: root -> name -> age
 Shape *s1_a = shape_transition_add(arena, root, key_name);
@@ -98,9 +96,9 @@ END_TIMED_TEST
 
 TIMED_TEST(T, lookup_slot_returns_correct_indices, init, fini)
 /*#region*/
-const_lstr_t key_a = make_temp_lstr(arena, "a");
-const_lstr_t key_b = make_temp_lstr(arena, "b");
-const_lstr_t key_c = make_temp_lstr(arena, "c");
+const char *key_a = make_temp_lstr(arena, "a");
+const char *key_b = make_temp_lstr(arena, "b");
+const char *key_c = make_temp_lstr(arena, "c");
 
 Shape *s1 = shape_transition_add(arena, root, key_a);
 Shape *s2 = shape_transition_add(arena, s1, key_b);
@@ -110,7 +108,7 @@ cr_expect_eq(shape_lookup_slot(s3, key_a), 0, "Key 'a' should map to slot 0");
 cr_expect_eq(shape_lookup_slot(s3, key_b), 1, "Key 'b' should map to slot 1");
 cr_expect_eq(shape_lookup_slot(s3, key_c), 2, "Key 'c' should map to slot 2");
 
-const_lstr_t non_existent = make_temp_lstr(arena, "missing");
+const char *non_existent = make_temp_lstr(arena, "missing");
 cr_expect_eq(shape_lookup_slot(s3, non_existent), -1, "Missing key should return -1");
 /*#endregion*/
 END_TIMED_TEST
@@ -121,23 +119,23 @@ END_TIMED_TEST
 
 TIMED_TEST(T, obj_creation_and_property_setting, init, fini)
 /*#region*/
-const_lstr_t k_name = make_temp_lstr(arena, "name");
-const_lstr_t k_price = make_temp_lstr(arena, "price");
+const char *k_name = make_temp_lstr(arena, "name");
+const char *k_price = make_temp_lstr(arena, "price");
 
 Obj *obj = obj_new(arena, root);
 cr_assert_not_null(obj, "Obj allocation should succeed");
-cr_expect_eq(obj->shape, root, "Initial object shape should be root");
+cr_expect_eq(obj_get_shape(obj), root, "Initial object shape should be root");
 
 Value v_name = val_str(make_temp_lstr(arena, "TradingEngine"));
 Value v_price = val_double(99.95);
 
 // Set property 1 -> Transitions shape
 obj_set(arena, obj, k_name, v_name);
-cr_expect_eq(obj->shape->slot_count, 1);
+cr_expect_eq(shape_get_slot_count(obj_get_shape(obj)), 1);
 
 // Set property 2 -> Transitions shape again
 obj_set(arena, obj, k_price, v_price);
-cr_expect_eq(obj->shape->slot_count, 2);
+cr_expect_eq(shape_get_slot_count(obj_get_shape(obj)), 2);
 
 // Read back property values
 Value out_name = val_undefined();
@@ -174,7 +172,7 @@ TRY {
   for (int i = 0; i < 20; i++) {
     buf[0] = 'a' + i;
     buf[1] = '\0';
-    const_lstr_t key = make_temp_lstr(arena, buf);
+    const char *key = make_temp_lstr(arena, buf);
     curr = shape_transition_add(arena, curr, key);
     if (!curr) {
       // Returned NULL indicating OOM, which is correct and safe

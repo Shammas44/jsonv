@@ -1,6 +1,5 @@
 #include "validate.h"
-#include "obj.h"
-#include "arr.h"
+#include "shape.internal.h"
 #include "schema.h"
 #include "ctx.h"
 #include <stdio.h>

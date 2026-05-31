@@ -1,4 +1,4 @@
-#include "shape.h"
+#include "shape.internal.h"
 #include "mem.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,7 +7,7 @@
 #include <assert.h>
 
 /* Helper to get length of const_lstr_t in O(1) */
-static inline size_t lstr_len(const_lstr_t s) {
+static inline size_t lstr_len(const char *s) {
   /*#region*/
   if (!s) return 0;
   return ((const StringHeader *)s - 1)->length;
@@ -16,7 +16,7 @@ static inline size_t lstr_len(const_lstr_t s) {
 
 /* ---------------- Transition ----------------- */
 
-Shape* shape_find_transition(Shape* s, const_lstr_t key) {
+Shape* shape_find_transition(Shape* s, const char *key) {
   /*#region*/
   size_t key_len = lstr_len(key);
   for (Transition* t = s->transitions; t; t = t->next) {
@@ -29,7 +29,7 @@ Shape* shape_find_transition(Shape* s, const_lstr_t key) {
   /*#endregion*/
 }
 
-void shape_add_transition(Jsonv_Arena *arena, Shape* from, const_lstr_t key, Shape* to) {
+void shape_add_transition(Jsonv_Arena *arena, Shape* from, const char *key, Shape* to) {
   /*#region*/
   // Conforms strictly to memory laws: Allocates on Arena, no standard malloc/calloc/free
   Transition* t = (Transition*)jsonv_arena_alloc(arena, sizeof(Transition));
@@ -41,7 +41,7 @@ void shape_add_transition(Jsonv_Arena *arena, Shape* from, const_lstr_t key, Sha
   /*#endregion*/
 }
 
-Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const_lstr_t key) {
+Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const char *key) {
   /*#region*/
   Shape* existing = shape_find_transition(s, key);
   if (existing) return existing;
@@ -74,7 +74,13 @@ Shape* shape_root(Jsonv_Arena *arena) {
   /*#endregion*/
 }
 
-int shape_lookup_slot(Shape* s, const_lstr_t key) {
+Jsonv_Shape* jsonv_shape_root(Jsonv_Arena *arena) {
+  /*#region*/
+  return shape_root(arena);
+  /*#endregion*/
+}
+
+int shape_lookup_slot(Shape* s, const char *key) {
   /*#region*/
   size_t key_len = lstr_len(key);
   for (Shape* cur = s; cur && cur->last_key; cur = cur->parent) {
@@ -87,13 +93,39 @@ int shape_lookup_slot(Shape* s, const_lstr_t key) {
   /*#endregion*/
 }
 
-const_lstr_t shape_get_key_at(Shape* s, int slot) {
+const char* shape_get_key_at(Shape* s, int slot) {
   /*#region*/
   while (s) {
     if (s->last_slot == slot)
       return s->last_key;
     s = s->parent;
   }
-  return (const_lstr_t)"?";
+  return "?";
+  /*#endregion*/
+}
+
+// Internal testing getters (not exported by public dynamic interfaces)
+
+Jsonv_Shape *shape_get_parent(const Jsonv_Shape *s) {
+  /*#region*/
+  return s ? s->parent : NULL;
+  /*#endregion*/
+}
+
+int shape_get_slot_count(const Jsonv_Shape *s) {
+  /*#region*/
+  return s ? s->slot_count : 0;
+  /*#endregion*/
+}
+
+int shape_get_last_slot(const Jsonv_Shape *s) {
+  /*#region*/
+  return s ? s->last_slot : -1;
+  /*#endregion*/
+}
+
+const char *shape_get_last_key(const Jsonv_Shape *s) {
+  /*#region*/
+  return s ? s->last_key : NULL;
   /*#endregion*/
 }

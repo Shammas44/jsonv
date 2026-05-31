@@ -1,4 +1,4 @@
-#include "arr.h"
+#include "shape.internal.h"
 #include "mem.h"
 #include <stdlib.h>
 #include <string.h>
@@ -26,6 +26,12 @@ Arr *arr_new(Jsonv_Arena *arena) {
   /*#endregion*/
 }
 
+Jsonv_Arr *jsonv_arr_new(Jsonv_Arena *arena) {
+  /*#region*/
+  return arr_new(arena);
+  /*#endregion*/
+}
+
 void arr_ensure_capacity(Jsonv_Arena *arena, Arr *a, int needed) {
   /*#region*/
   if (a->capacity >= needed)
@@ -46,7 +52,7 @@ void arr_ensure_capacity(Jsonv_Arena *arena, Arr *a, int needed) {
 
   // Initialize new memory to undefined to prevent reading garbage data
   for (int i = a->capacity; i < newcap; i++) {
-    new_items[i] = val_undefined();
+    new_items[i] = jsonv_val_undefined();
   }
 
   a->items = new_items;
@@ -72,6 +78,12 @@ void arr_set(Jsonv_Arena *arena, Arr *a, int index, Value v) {
   /*#endregion*/
 }
 
+void jsonv_arr_set(Jsonv_Arena *arena, Jsonv_Arr *a, int index, Jsonv_Value v) {
+  /*#region*/
+  arr_set(arena, a, index, v);
+  /*#endregion*/
+}
+
 int arr_get(Arr *a, int index, Value *out) {
   /*#region*/
   if (index < 0 || index >= a->length)
@@ -79,5 +91,37 @@ int arr_get(Arr *a, int index, Value *out) {
       
   *out = a->items[index];
   return 1;
+  /*#endregion*/
+}
+
+bool jsonv_arr_get(Jsonv_Arr *a, int index, Jsonv_Value *out) {
+  /*#region*/
+  return arr_get(a, index, out) != 0;
+  /*#endregion*/
+}
+
+// Internal testing getters
+
+Jsonv_Value *arr_get_items(const Jsonv_Arr *a) {
+  /*#region*/
+  return a ? a->items : NULL;
+  /*#endregion*/
+}
+
+int arr_get_length(const Jsonv_Arr *a) {
+  /*#region*/
+  return a ? a->length : 0;
+  /*#endregion*/
+}
+
+int arr_get_capacity(const Jsonv_Arr *a) {
+  /*#region*/
+  return a ? a->capacity : 0;
+  /*#endregion*/
+}
+
+int arr_get_refcount(const Jsonv_Arr *a) {
+  /*#region*/
+  return a ? a->refcount : 0;
   /*#endregion*/
 }
