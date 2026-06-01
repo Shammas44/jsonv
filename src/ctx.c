@@ -309,5 +309,7 @@ void jsonv_ctx_reset(Jsonv_Context *ctx) {
   ctx->has_error = false;
   // Reset the transient execution arena
   jsonv_arena_reset(ctx->execution_arena);
+  // Clear the thread-local recycled free lists to prevent dangling pointer references
+  jsonv_shape_clear_free_lists();
   /*#endregion*/
 }
