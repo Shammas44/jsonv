@@ -37,6 +37,8 @@ static void fini(void) {
     jsonv_arena_destroy(execution_arena);
     execution_arena = NULL;
   }
+  extern void jsonv_shape_clear_global_arena(void);
+  jsonv_shape_clear_global_arena();
   test_fini();
   /*#endregion*/
 }
