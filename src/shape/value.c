@@ -2,7 +2,60 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-/* ------------------- Value ------------------- */
+_Thread_local Obj *obj_free_list = NULL;
+_Thread_local Arr *arr_free_list = NULL;
+_Thread_local Value *val_array_free_lists[VAL_ARRAY_POOL_COUNT] = {NULL};
+
+void jsonv_shape_clear_free_lists(void) {
+  /*#region*/
+  obj_free_list = NULL;
+  arr_free_list = NULL;
+  for (int i = 0; i < VAL_ARRAY_POOL_COUNT; i++) {
+    val_array_free_lists[i] = NULL;
+  }
+  /*#endregion*/
+}
+
+static inline int cap_to_pool_index(int capacity) {
+  /*#region*/
+  switch (capacity) {
+    case 4:   return 0;
+    case 8:   return 1;
+    case 16:  return 2;
+    case 32:  return 3;
+    case 64:  return 4;
+    case 128: return 5;
+    case 256: return 6;
+    case 512: return 7;
+    default:  return -1;
+  }
+  /*#endregion*/
+}
+
+void recycle_val_array(Value *arr, int capacity) {
+  /*#region*/
+  int idx = cap_to_pool_index(capacity);
+  if (idx >= 0) {
+    arr[0].tag = VAL_PTR;
+    arr[0].as.p = val_array_free_lists[idx];
+    val_array_free_lists[idx] = arr;
+  }
+  /*#endregion*/
+}
+
+Value *allocate_val_array(Jsonv_Arena *arena, int capacity) {
+  /*#region*/
+  int idx = cap_to_pool_index(capacity);
+  Value *arr = NULL;
+  if (idx >= 0 && val_array_free_lists[idx]) {
+    arr = val_array_free_lists[idx];
+    val_array_free_lists[idx] = (Value *)arr[0].as.p;
+  } else {
+    arr = (Value *)jsonv_arena_alloc(arena, (size_t)capacity * sizeof(Value));
+  }
+  return arr;
+  /*#endregion*/
+}
 
 typedef struct {
   int refcount;

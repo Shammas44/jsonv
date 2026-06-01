@@ -74,6 +74,14 @@ void shape_add_transition(Jsonv_Arena *arena, Shape* from, const char* key, Shap
 Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const char* key);
 int shape_lookup_slot(Shape* s, const char* key);
 const char* shape_get_key_at(Shape* s, int slot);
+#define VAL_ARRAY_POOL_COUNT 8
+extern _Thread_local Jsonv_Obj *obj_free_list;
+extern _Thread_local Jsonv_Arr *arr_free_list;
+extern _Thread_local Jsonv_Value *val_array_free_lists[VAL_ARRAY_POOL_COUNT];
+
+void jsonv_shape_clear_free_lists(void);
+void recycle_val_array(Jsonv_Value *arr, int capacity);
+Jsonv_Value *allocate_val_array(Jsonv_Arena *arena, int capacity);
 
 Obj *obj_new(Jsonv_Arena *arena, Shape *root);
 void obj_free(Obj *o);

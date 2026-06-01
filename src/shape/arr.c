@@ -5,9 +5,14 @@
 
 void arr_free(Arr *a) {
   /*#region*/
-  // Memory is automatically collected on Arena resets/destructions, 
-  // so this acts strictly as a safe no-op to comply with the malloc/free ban.
-  (void)a;
+  if (a->items && a->capacity > 0) {
+    recycle_val_array(a->items, a->capacity);
+    a->items = NULL;
+    a->capacity = 0;
+    a->length = 0;
+  }
+  a->items = (Value *)arr_free_list;
+  arr_free_list = a;
   /*#endregion*/
 }
 
@@ -15,9 +20,14 @@ void arr_free(Arr *a) {
 
 Arr *arr_new(Jsonv_Arena *arena) {
   /*#region*/
-  // Conforms strictly to memory laws: allocates directly on the Arena memory pool
-  Arr *a = (Arr *)jsonv_arena_alloc(arena, sizeof(Arr));
-  if (!a) return NULL;
+  Arr *a;
+  if (arr_free_list) {
+    a = arr_free_list;
+    arr_free_list = (Arr *)a->items;
+  } else {
+    a = (Arr *)jsonv_arena_alloc(arena, sizeof(Arr));
+    if (!a) return NULL;
+  }
   a->items = NULL;
   a->capacity = 0;
   a->length = 0;
@@ -41,13 +51,13 @@ void arr_ensure_capacity(Jsonv_Arena *arena, Arr *a, int needed) {
   while (newcap < needed)
     newcap *= 2;
 
-  // Conforms strictly to memory laws: allocates a new dynamic slot buffer in the Arena
-  Value *new_items = (Value *)jsonv_arena_alloc(arena, (size_t)newcap * sizeof(Value));
+  Value *new_items = allocate_val_array(arena, newcap);
   if (!new_items) return;
   
   // Copy old items
   if (a->items && a->capacity > 0) {
     memcpy(new_items, a->items, (size_t)a->capacity * sizeof(Value));
+    recycle_val_array(a->items, a->capacity);
   }
 
   // Initialize new memory to undefined to prevent reading garbage data

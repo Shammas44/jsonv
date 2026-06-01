@@ -5,9 +5,13 @@
 
 void obj_free(Obj *o) {
   /*#region*/
-  // Memory is automatically collected on Arena resets/destructions, 
-  // so this acts strictly as a safe no-op to comply with the malloc/free ban.
-  (void)o;
+  if (o->slots && o->capacity > 0) {
+    recycle_val_array(o->slots, o->capacity);
+    o->slots = NULL;
+    o->capacity = 0;
+  }
+  o->slots = (Value *)obj_free_list;
+  obj_free_list = o;
   /*#endregion*/
 }
 
@@ -15,9 +19,14 @@ void obj_free(Obj *o) {
 
 Obj *obj_new(Jsonv_Arena *arena, Shape *root) {
   /*#region*/
-  // Conforms strictly to memory laws: allocates directly on the Arena memory pool
-  Obj *o = (Obj *)jsonv_arena_alloc(arena, sizeof(Obj));
-  if (!o) return NULL;
+  Obj *o;
+  if (obj_free_list) {
+    o = obj_free_list;
+    obj_free_list = (Obj *)o->slots;
+  } else {
+    o = (Obj *)jsonv_arena_alloc(arena, sizeof(Obj));
+    if (!o) return NULL;
+  }
   o->shape = root;
   o->slots = NULL;
   o->capacity = 0;
@@ -40,13 +49,13 @@ void obj_ensure_capacity(Jsonv_Arena *arena, Obj *o, int needed) {
   while (newcap < needed)
     newcap *= 2;
 
-  // Conforms strictly to memory laws: allocates a new slot buffer contiguously in the Arena
-  Value *new_slots = (Value *)jsonv_arena_alloc(arena, (size_t)newcap * sizeof(Value));
+  Value *new_slots = allocate_val_array(arena, newcap);
   if (!new_slots) return;
 
   // Copy old slots
   if (o->slots && o->capacity > 0) {
     memcpy(new_slots, o->slots, (size_t)o->capacity * sizeof(Value));
+    recycle_val_array(o->slots, o->capacity);
   }
 
   // Initialize new slots to undefined
