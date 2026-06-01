@@ -29,10 +29,31 @@ Shape* shape_find_transition(Shape* s, const char *key) {
   /*#endregion*/
 }
 
+static Jsonv_Arena *global_shape_arena = NULL;
+
+static void init_global_shape_arena(void) {
+  /*#region*/
+  if (!global_shape_arena) {
+    global_shape_arena = jsonv_arena_new(4096, 10 * 1024 * 1024, 1024 * 1024);
+  }
+  /*#endregion*/
+}
+
+void jsonv_shape_clear_global_arena(void) {
+  /*#region*/
+  if (global_shape_arena) {
+    jsonv_arena_destroy(global_shape_arena);
+    global_shape_arena = NULL;
+  }
+  /*#endregion*/
+}
+
 void shape_add_transition(Jsonv_Arena *arena, Shape* from, const char *key, Shape* to) {
   /*#region*/
+  (void)arena;
+  init_global_shape_arena();
   // Conforms strictly to memory laws: Allocates on Arena, no standard malloc/calloc/free
-  Transition* t = (Transition*)jsonv_arena_alloc(arena, sizeof(Transition));
+  Transition* t = (Transition*)jsonv_arena_alloc(global_shape_arena, sizeof(Transition));
   if (!t) return;
   t->key = key;
   t->next_shape = to;
@@ -43,10 +64,12 @@ void shape_add_transition(Jsonv_Arena *arena, Shape* from, const char *key, Shap
 
 Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const char *key) {
   /*#region*/
+  (void)arena;
+  init_global_shape_arena();
   Shape* existing = shape_find_transition(s, key);
   if (existing) return existing;
 
-  Shape* child = (Shape*)jsonv_arena_alloc(arena, sizeof(Shape));
+  Shape* child = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
   if (!child) return NULL;
   child->parent = s;
   child->last_key = key;
@@ -54,7 +77,7 @@ Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const char *key) {
   child->slot_count = s->slot_count + 1;
   child->transitions = NULL;
 
-  shape_add_transition(arena, s, key, child);
+  shape_add_transition(global_shape_arena, s, key, child);
   return child;
   /*#endregion*/
 }
@@ -63,7 +86,9 @@ Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const char *key) {
 
 Shape* shape_root(Jsonv_Arena *arena) {
   /*#region*/
-  Shape* s = (Shape*)jsonv_arena_alloc(arena, sizeof(Shape));
+  (void)arena;
+  init_global_shape_arena();
+  Shape* s = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
   if (!s) return NULL;
   s->parent = NULL;
   s->last_key = NULL;

@@ -67,6 +67,7 @@ static inline size_t val_str_len(Jsonv_Value v) {
 #define VAL_IMPOSSIBLE JSONV_VAL_IMPOSSIBLE
 
 // Internal-only functions
+void jsonv_shape_clear_global_arena(void);
 Shape* shape_root(Jsonv_Arena *arena);
 Shape* shape_find_transition(Shape* s, const char* key);
 void shape_add_transition(Jsonv_Arena *arena, Shape* from, const char* key, Shape* to);
