@@ -68,10 +68,8 @@ static inline size_t val_str_len(Jsonv_Value v) {
 
 // Internal-only functions
 void jsonv_shape_clear_global_arena(void);
-Shape* shape_root(Jsonv_Arena *arena);
 Shape* shape_find_transition(Shape* s, const char* key);
-void shape_add_transition(Jsonv_Arena *arena, Shape* from, const char* key, Shape* to);
-Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const char* key);
+Shape* shape_transition_add(Shape* s, const char* key);
 int shape_lookup_slot(Shape* s, const char* key);
 const char* shape_get_key_at(Shape* s, int slot);
 #define VAL_ARRAY_POOL_COUNT 8

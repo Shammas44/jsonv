@@ -18,7 +18,7 @@ static void init(void) {
   // Allocate arena with 1MB ceiling limit
   arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
   cr_assert_not_null(arena, "Arena allocation failed");
-  root = shape_root(arena);
+  root = jsonv_shape_root();
   cr_assert_not_null(root, "Root shape allocation failed");
   /*#endregion*/
 }
@@ -63,7 +63,7 @@ END_TIMED_TEST
 TIMED_TEST(T, add_transition_creates_child_and_allocates_slot, init, fini)
 /*#region*/
 const char *key = make_temp_lstr(arena, "name");
-Shape *s1 = shape_transition_add(arena, root, key);
+Shape *s1 = shape_transition_add(root, key);
 
 cr_assert_not_null(s1, "Transition s0 -> s1 should succeed");
 cr_expect_eq(shape_get_parent(s1), root, "s1 parent should be root");
@@ -79,12 +79,12 @@ const char *key_name = make_temp_lstr(arena, "name");
 const char *key_age = make_temp_lstr(arena, "age");
 
 // Path A: root -> name -> age
-Shape *s1_a = shape_transition_add(arena, root, key_name);
-Shape *s2_a = shape_transition_add(arena, s1_a, key_age);
+Shape *s1_a = shape_transition_add(root, key_name);
+Shape *s2_a = shape_transition_add(s1_a, key_age);
 
 // Path B: root -> name -> age (Identical sequence)
-Shape *s1_b = shape_transition_add(arena, root, key_name);
-Shape *s2_b = shape_transition_add(arena, s1_b, key_age);
+Shape *s1_b = shape_transition_add(root, key_name);
+Shape *s2_b = shape_transition_add(s1_b, key_age);
 
 cr_expect_eq(s1_a, s1_b, "Shape 'name' should be identical and shared");
 cr_expect_eq(s2_a, s2_b, "Shape 'name -> age' should be identical and shared");
@@ -101,9 +101,9 @@ const char *key_a = make_temp_lstr(arena, "a");
 const char *key_b = make_temp_lstr(arena, "b");
 const char *key_c = make_temp_lstr(arena, "c");
 
-Shape *s1 = shape_transition_add(arena, root, key_a);
-Shape *s2 = shape_transition_add(arena, s1, key_b);
-Shape *s3 = shape_transition_add(arena, s2, key_c);
+Shape *s1 = shape_transition_add(root, key_a);
+Shape *s2 = shape_transition_add(s1, key_b);
+Shape *s3 = shape_transition_add(s2, key_c);
 
 cr_expect_eq(shape_lookup_slot(s3, key_a), 0, "Key 'a' should map to slot 0");
 cr_expect_eq(shape_lookup_slot(s3, key_b), 1, "Key 'b' should map to slot 1");
@@ -163,7 +163,7 @@ jsonv_arena_destroy(arena);
 arena = jsonv_arena_new(256, 512, 512);
 cr_assert_not_null(arena);
 
-root = shape_root(arena);
+root = jsonv_shape_root();
 cr_assert_not_null(root);
 
 // Exceeding limit via rapid transition creation should fail cleanly/gracefully
@@ -174,7 +174,7 @@ TRY {
     buf[0] = 'a' + i;
     buf[1] = '\0';
     const char *key = make_temp_lstr(arena, buf);
-    curr = shape_transition_add(arena, curr, key);
+    curr = shape_transition_add(curr, key);
     if (!curr) {
       // Returned NULL indicating OOM, which is correct and safe
       break;

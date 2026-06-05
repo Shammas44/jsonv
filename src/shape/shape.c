@@ -1,5 +1,4 @@
 #include "shape.internal.h"
-#include "mem.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,21 +10,6 @@ static inline size_t lstr_len(const char *s) {
   /*#region*/
   if (!s) return 0;
   return ((const StringHeader *)s - 1)->length;
-  /*#endregion*/
-}
-
-/* ---------------- Transition ----------------- */
-
-Shape* shape_find_transition(Shape* s, const char *key) {
-  /*#region*/
-  size_t key_len = lstr_len(key);
-  for (Transition* t = s->transitions; t; t = t->next) {
-    size_t t_len = lstr_len(t->key);
-    if (t_len == key_len && memcmp(t->key, key, key_len) == 0) {
-      return t->next_shape;
-    }
-  }
-  return NULL;
   /*#endregion*/
 }
 
@@ -48,9 +32,10 @@ void jsonv_shape_clear_global_arena(void) {
   /*#endregion*/
 }
 
-void shape_add_transition(Jsonv_Arena *arena, Shape* from, const char *key, Shape* to) {
+/* ---------------- Transition ----------------- */
+
+static void add_transition(Shape* from, const char *key, Shape* to) {
   /*#region*/
-  (void)arena;
   init_global_shape_arena();
   // Conforms strictly to memory laws: Allocates on Arena, no standard malloc/calloc/free
   Transition* t = (Transition*)jsonv_arena_alloc(global_shape_arena, sizeof(Transition));
@@ -62,9 +47,8 @@ void shape_add_transition(Jsonv_Arena *arena, Shape* from, const char *key, Shap
   /*#endregion*/
 }
 
-Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const char *key) {
+Shape* shape_transition_add(Shape* s, const char *key) {
   /*#region*/
-  (void)arena;
   init_global_shape_arena();
   Shape* existing = shape_find_transition(s, key);
   if (existing) return existing;
@@ -77,16 +61,28 @@ Shape* shape_transition_add(Jsonv_Arena *arena, Shape* s, const char *key) {
   child->slot_count = s->slot_count + 1;
   child->transitions = NULL;
 
-  shape_add_transition(global_shape_arena, s, key, child);
+  add_transition(s, key, child);
   return child;
+  /*#endregion*/
+}
+
+Shape* shape_find_transition(Shape* s, const char *key) {
+  /*#region*/
+  size_t key_len = lstr_len(key);
+  for (Transition* t = s->transitions; t; t = t->next) {
+    size_t t_len = lstr_len(t->key);
+    if (t_len == key_len && memcmp(t->key, key, key_len) == 0) {
+      return t->next_shape;
+    }
+  }
+  return NULL;
   /*#endregion*/
 }
 
 /* ------------------- Shape ------------------- */
 
-Shape* shape_root(Jsonv_Arena *arena) {
+Shape* jsonv_shape_root(void) {
   /*#region*/
-  (void)arena;
   init_global_shape_arena();
   Shape* s = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
   if (!s) return NULL;
@@ -96,12 +92,6 @@ Shape* shape_root(Jsonv_Arena *arena) {
   s->slot_count = 0;
   s->transitions = NULL;
   return s;
-  /*#endregion*/
-}
-
-Jsonv_Shape* jsonv_shape_root(Jsonv_Arena *arena) {
-  /*#region*/
-  return shape_root(arena);
   /*#endregion*/
 }
 

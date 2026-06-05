@@ -1,5 +1,4 @@
 #include "shape.internal.h"
-#include "mem.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -83,7 +82,7 @@ void obj_set(Jsonv_Arena *arena, Obj *o, const char *key, Value v) {
 
   // --- Adding a new property ---
 
-  Shape *newshape = shape_transition_add(arena, o->shape, key);
+  Shape *newshape = shape_transition_add(o->shape, key);
   if (!newshape) return;
   o->shape = newshape;
 

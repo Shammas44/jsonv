@@ -60,7 +60,7 @@ JSONV_API void jsonv_arr_set(Jsonv_Arena *arena, Jsonv_Arr *a, int index, Jsonv_
 JSONV_API bool jsonv_arr_get(Jsonv_Arr *a, int index, Jsonv_Value *out);
 
 // Public Shape Operations
-JSONV_API Jsonv_Shape* jsonv_shape_root(Jsonv_Arena *arena);
+JSONV_API Jsonv_Shape* jsonv_shape_root(void);
 
 // Nested format accessor
 JSONV_API Jsonv_Value jsonv_value_get_path(Jsonv_Value current, const char *fmt, ...);

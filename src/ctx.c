@@ -6,7 +6,6 @@
 #include "mem.h"
 #include "prescan.h"
 #include "schema.h"
-#include "global.h"
 #include "validate.h"
 #include <assert.h>
 #include <stdio.h>
@@ -212,7 +211,7 @@ bool jsonv_ctx_parse_data(
 
     // 5. CONVERT TO VALUE
     ASTNode *pool = (ASTNode *)ctx->data.data;
-    Shape *exe_root = shape_root(ctx->execution_arena);
+    Shape *exe_root = jsonv_shape_root();
     if (!exe_root) return false;
     Value val = ast_to_value(pool, &ctx->data_keytree, 0, exe_root, ctx->execution_arena);
     
