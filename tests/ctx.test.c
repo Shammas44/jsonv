@@ -140,8 +140,10 @@ cr_assert_not_null(ctx);
 const unsigned char *data_json = (const unsigned char *)"{\"name\": \"jsonv\", \"price\": 12.50}";
 Value parsed_val;
 
-bool success = jsonv_ctx_parse_data(ctx, data_json, &parsed_val);
+bool success = jsonv_ctx_parse_data(ctx, data_json);
 cr_assert(success, "Parsing valid JSON payload should succeed");
+bool get_ok = jsonv_ctx_get_value(ctx, &parsed_val);
+cr_assert(get_ok);
 cr_expect_eq(parsed_val.tag, JSONV_VAL_OBJ, "Parsed value should be an Object");
 /*#endregion*/
 END_TIMED_TEST
@@ -163,9 +165,8 @@ Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"name\": \"jsonv\", \"price\": }"; // Malformed JSON
-Value parsed_val;
 
-bool success = jsonv_ctx_parse_data(ctx, data_json, &parsed_val);
+bool success = jsonv_ctx_parse_data(ctx, data_json);
 cr_assert(!success, "Parsing invalid JSON payload should fail");
 
 const E *err = jsonv_ctx_get_error(ctx);
@@ -197,12 +198,11 @@ Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"name\": \"TradingEngine\"}";
-Value data_val;
-bool parse_ok = jsonv_ctx_parse_data(ctx, data_json, &data_val);
+bool parse_ok = jsonv_ctx_parse_data(ctx, data_json);
 cr_assert(parse_ok);
 
 // 3. Validate
-bool valid = jsonv_ctx_validate(ctx, schema, data_val);
+bool valid = jsonv_ctx_validate(ctx, schema);
 cr_expect(valid, "Validation of compliant payload should succeed");
 /*#endregion*/
 END_TIMED_TEST
@@ -231,12 +231,11 @@ Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"username\": 12345}";
-Value data_val;
-bool parse_ok = jsonv_ctx_parse_data(ctx, data_json, &data_val);
+bool parse_ok = jsonv_ctx_parse_data(ctx, data_json);
 cr_assert(parse_ok);
 
 // 3. Validate -> Expect Failure
-bool valid = jsonv_ctx_validate(ctx, schema, data_val);
+bool valid = jsonv_ctx_validate(ctx, schema);
 cr_assert(!valid, "Validation of non-compliant payload should fail");
 
 const E *err = jsonv_ctx_get_error(ctx);
@@ -273,8 +272,7 @@ TRY {
     // Large parsing request should quickly exceed 256 bytes and trigger OOM exception cleanly
     const unsigned char *large_json = (const unsigned char *)
         "{\"a\": 1, \"b\": 2, \"c\": 3, \"d\": 4, \"e\": 5, \"f\": 6, \"g\": 7}";
-    Value val;
-    bool success = jsonv_ctx_parse_data(ctx, large_json, &val);
+    bool success = jsonv_ctx_parse_data(ctx, large_json);
     cr_assert(!success, "Parsing under restrictive OOM limit should return false");
   }
 }
@@ -285,3 +283,77 @@ EXCEPT(ARENA_LIMIT_REACHED) {
 END_TRY;
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, parse_without_validation, init, fini)
+/*#region*/
+Jsonv_Config config = {
+    .default_block_size = 1024,
+    .max_limit = 65536,
+    .shrink_at = 4096,
+    .max_depth = 10,
+    .max_values = 100,
+    .max_objects = 100,
+    .max_array = 100,
+    .max_string_bytes = 1000
+};
+
+Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+cr_assert_not_null(ctx);
+
+const unsigned char *data_json = (const unsigned char *)"{\"id\": 42, \"active\": true}";
+bool parse_ok = jsonv_ctx_parse_data(ctx, data_json);
+cr_assert(parse_ok, "Parse should succeed without schema compiled");
+
+Value val;
+bool get_ok = jsonv_ctx_get_value(ctx, &val);
+cr_assert(get_ok, "Value retrieval should succeed");
+cr_expect_eq(val.tag, JSONV_VAL_OBJ, "Val should be an Object");
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, validation_direct_ast_behavior, init, fini)
+/*#region*/
+Jsonv_Config config = {
+    .default_block_size = 1024,
+    .max_limit = 65536,
+    .shrink_at = 4096,
+    .max_depth = 10,
+    .max_values = 100,
+    .max_objects = 100,
+    .max_array = 100,
+    .max_string_bytes = 1000
+};
+
+const unsigned char *schema_json = (const unsigned char *)"{\"type\": \"object\", \"required\": [\"name\"]}";
+E compile_err = {0};
+Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, schema_json, &config, &compile_err);
+cr_assert_not_null(schema);
+
+Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+cr_assert_not_null(ctx);
+
+// 1. Invalid payload: Missing required field "name"
+const unsigned char *invalid_json = (const unsigned char *)"{\"age\": 30}";
+bool parse_ok1 = jsonv_ctx_parse_data(ctx, invalid_json);
+cr_assert(parse_ok1);
+
+bool valid1 = jsonv_ctx_validate(ctx, schema);
+cr_assert(!valid1, "Validation should fail for invalid payload");
+
+// 2. Reset context and test valid payload
+jsonv_ctx_reset(ctx);
+
+const unsigned char *valid_json = (const unsigned char *)"{\"name\": \"jsonv\"}";
+bool parse_ok2 = jsonv_ctx_parse_data(ctx, valid_json);
+cr_assert(parse_ok2);
+
+bool valid2 = jsonv_ctx_validate(ctx, schema);
+cr_assert(valid2, "Validation should pass for valid payload");
+
+Value val;
+bool get_ok = jsonv_ctx_get_value(ctx, &val);
+cr_assert(get_ok, "Retrieving value of valid payload should succeed");
+cr_expect_eq(val.tag, JSONV_VAL_OBJ);
+/*#endregion*/
+END_TIMED_TEST
+

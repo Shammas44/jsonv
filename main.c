@@ -140,17 +140,23 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
     return;
   }
 
-  Jsonv_Value parsed_val;
-  bool parsed = jsonv_ctx_parse_data(ctx, payload, &parsed_val);
+  bool parsed = jsonv_ctx_parse_data(ctx, payload);
   if (parsed) {
     event_log(Green, "Success: Payload parsed successfully.");
+    bool valid = true;
     if (schema) {
-      bool valid = jsonv_ctx_validate(ctx, schema, parsed_val);
+      valid = jsonv_ctx_validate(ctx, schema);
       if (valid) {
         event_log(Green, "Success: Payload is valid against the schema.");
       } else {
         const E *v_err = jsonv_ctx_get_error(ctx);
         event_log(Red, "Validation Error %d: %s at %s", v_err->type, v_err->description, v_err->path ? v_err->path : "");
+      }
+    }
+    if (valid) {
+      Jsonv_Value parsed_val;
+      if (jsonv_ctx_get_value(ctx, &parsed_val)) {
+        // Successfully retrieved shape-based Value on-demand.
       }
     }
   } else {
