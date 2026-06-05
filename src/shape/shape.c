@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <assert.h>
+#include <pthread.h>
 
 /* Helper to get length of const_lstr_t in O(1) */
 static inline size_t lstr_len(const char *s) {
@@ -14,59 +15,34 @@ static inline size_t lstr_len(const char *s) {
 }
 
 static Jsonv_Arena *global_shape_arena = NULL;
+static pthread_mutex_t shape_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static void init_global_shape_arena(void) {
   /*#region*/
   if (!global_shape_arena) {
-    global_shape_arena = jsonv_arena_new(4096, 10 * 1024 * 1024, 1024 * 1024);
+    pthread_mutex_lock(&shape_mutex);
+    if (!global_shape_arena) {
+      global_shape_arena = jsonv_arena_new(4096, 10 * 1024 * 1024, 1024 * 1024);
+    }
+    pthread_mutex_unlock(&shape_mutex);
   }
   /*#endregion*/
 }
 
 void jsonv_shape_clear_global_arena(void) {
   /*#region*/
+  pthread_mutex_lock(&shape_mutex);
   if (global_shape_arena) {
     jsonv_arena_destroy(global_shape_arena);
     global_shape_arena = NULL;
   }
+  pthread_mutex_unlock(&shape_mutex);
   /*#endregion*/
 }
 
 /* ---------------- Transition ----------------- */
 
-static void add_transition(Shape* from, const char *key, Shape* to) {
-  /*#region*/
-  init_global_shape_arena();
-  // Conforms strictly to memory laws: Allocates on Arena, no standard malloc/calloc/free
-  Transition* t = (Transition*)jsonv_arena_alloc(global_shape_arena, sizeof(Transition));
-  if (!t) return;
-  t->key = key;
-  t->next_shape = to;
-  t->next = from->transitions;
-  from->transitions = t;
-  /*#endregion*/
-}
-
-Shape* shape_transition_add(Shape* s, const char *key) {
-  /*#region*/
-  init_global_shape_arena();
-  Shape* existing = shape_find_transition(s, key);
-  if (existing) return existing;
-
-  Shape* child = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
-  if (!child) return NULL;
-  child->parent = s;
-  child->last_key = key;
-  child->last_slot = s->slot_count;  // Assign next slot
-  child->slot_count = s->slot_count + 1;
-  child->transitions = NULL;
-
-  add_transition(s, key, child);
-  return child;
-  /*#endregion*/
-}
-
-Shape* shape_find_transition(Shape* s, const char *key) {
+static Shape* find_transition_no_lock(Shape* s, const char *key) {
   /*#region*/
   size_t key_len = lstr_len(key);
   for (Transition* t = s->transitions; t; t = t->next) {
@@ -79,18 +55,63 @@ Shape* shape_find_transition(Shape* s, const char *key) {
   /*#endregion*/
 }
 
+Shape* shape_transition_add(Shape* s, const char *key) {
+  /*#region*/
+  init_global_shape_arena();
+  pthread_mutex_lock(&shape_mutex);
+  Shape* existing = find_transition_no_lock(s, key);
+  if (existing) {
+    pthread_mutex_unlock(&shape_mutex);
+    return existing;
+  }
+
+  Shape* child = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
+  if (!child) {
+    pthread_mutex_unlock(&shape_mutex);
+    return NULL;
+  }
+  child->parent = s;
+  child->last_key = key;
+  child->last_slot = s->slot_count;  // Assign next slot
+  child->slot_count = s->slot_count + 1;
+  child->transitions = NULL;
+
+  Transition* t = (Transition*)jsonv_arena_alloc(global_shape_arena, sizeof(Transition));
+  if (t) {
+    t->key = key;
+    t->next_shape = child;
+    t->next = s->transitions;
+    s->transitions = t;
+  }
+  pthread_mutex_unlock(&shape_mutex);
+  return child;
+  /*#endregion*/
+}
+
+Shape* shape_find_transition(Shape* s, const char *key) {
+  /*#region*/
+  pthread_mutex_lock(&shape_mutex);
+  Shape* res = find_transition_no_lock(s, key);
+  pthread_mutex_unlock(&shape_mutex);
+  return res;
+  /*#endregion*/
+}
+
 /* ------------------- Shape ------------------- */
 
 Shape* jsonv_shape_root(void) {
   /*#region*/
   init_global_shape_arena();
+  pthread_mutex_lock(&shape_mutex);
   Shape* s = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
-  if (!s) return NULL;
-  s->parent = NULL;
-  s->last_key = NULL;
-  s->last_slot = -1;
-  s->slot_count = 0;
-  s->transitions = NULL;
+  if (s) {
+    s->parent = NULL;
+    s->last_key = NULL;
+    s->last_slot = -1;
+    s->slot_count = 0;
+    s->transitions = NULL;
+  }
+  pthread_mutex_unlock(&shape_mutex);
   return s;
   /*#endregion*/
 }
