@@ -151,6 +151,12 @@ void *jsonv_arena_alloc(Jsonv_Arena *arena, size_t size) {
 
 void jsonv_arena_reset(Jsonv_Arena *arena) {
   /*#region*/
+  jsonv_arena_reset_to(arena, 0);
+  /*#endregion*/
+}
+
+void jsonv_arena_reset_to(Jsonv_Arena *arena, size_t keep_size) {
+  /*#region*/
   // SMART TRIM LOGIC
   if (arena->total_reserved > arena->shrink_at) {
     // 1. Keep the HEAD, free the rest using safe FREE macro
@@ -164,14 +170,16 @@ void jsonv_arena_reset(Jsonv_Arena *arena) {
 
     // 2. Reset calculations
     arena->total_reserved = sizeof(Jsonv_ArenaBlock) + arena->head->capacity;
-  } else {
-    // OPTIMIZATION: Fast O(1) path.
-    // No loop traversal needed! Downstream .used is safely overwritten on
-    // demand.
   }
 
-  // 3. Reset pointer to start
-  arena->head->used = 0;
+  // Align keep size
+  size_t aligned = align_up(keep_size);
+  if (aligned > arena->head->capacity) {
+    aligned = arena->head->capacity;
+  }
+
+  // 3. Reset pointer to start + keep_size
+  arena->head->used = aligned;
   arena->current = arena->head;
   /*#endregion*/
 }

@@ -31,6 +31,7 @@ JSONV_API void *jsonv_arena_alloc(T *arena, size_t size);
  * @description Erease all arena's blocks data
  */
 JSONV_API void jsonv_arena_reset(T *arena);
+JSONV_API void jsonv_arena_reset_to(T *arena, size_t keep_size);
 /**
  * @description Deallocate an arena
  */
