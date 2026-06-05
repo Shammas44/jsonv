@@ -33,14 +33,17 @@ JSONV_API Jsonv_Context* jsonv_ctx_create(
 
 JSONV_API bool jsonv_ctx_parse_data(
     Jsonv_Context *ctx,
-    const unsigned char *data_json,
-    Jsonv_Value *out_value
+    const unsigned char *data_json
 );
 
 JSONV_API bool jsonv_ctx_validate(
     Jsonv_Context *ctx,
-    const Jsonv_Schema *schema,
-    Jsonv_Value data_value
+    const Jsonv_Schema *schema
+);
+
+JSONV_API bool jsonv_ctx_get_value(
+    Jsonv_Context *ctx,
+    Jsonv_Value *out_value
 );
 
 JSONV_API const E* jsonv_ctx_get_error(const Jsonv_Context *ctx);

@@ -20,11 +20,12 @@ extern const Except MAXIMUM_VALUES_REACHED;
 extern const Except ARENA_LIMIT_REACHED;
 extern const Except MAXIMUM_TOKEN_BYTES_REACHED;
 
-extern bool validate_value(
+extern bool validate_ast(
     Jsonv_Context *ctx,
+    ASTNode *pool,
     const Jsonv_Schema *schema,
     int rule_idx,
-    Value val,
+    int node_idx,
     const char *path,
     E *out_err
 );
@@ -167,8 +168,7 @@ Jsonv_Context* jsonv_ctx_create(
 
 bool jsonv_ctx_parse_data(
     Jsonv_Context *ctx,
-    const unsigned char *data_json,
-    Value *out_value
+    const unsigned char *data_json
 ) {
   /*#region*/
   assert(ctx);
@@ -176,10 +176,6 @@ bool jsonv_ctx_parse_data(
   
   memset(&ctx->last_error, 0, sizeof(E));
   ctx->has_error = false;
-  
-  if (out_value) {
-    *out_value = val_undefined();
-  }
   
   size_t json_length = strlen((char *)data_json);
   if (json_length == 0) {
@@ -209,15 +205,6 @@ bool jsonv_ctx_parse_data(
     // 3. COMPILE AST (Consolidated Deep Seam)
     parse_to_ast(ctx->execution_arena, &lexer, json_length, est.value_count, &ctx->data, &ctx->data_keytree, &ctx->data_set);
 
-    // 5. CONVERT TO VALUE
-    ASTNode *pool = (ASTNode *)ctx->data.data;
-    Shape *exe_root = jsonv_shape_root();
-    if (!exe_root) return false;
-    Value val = ast_to_value(pool, &ctx->data_keytree, 0, exe_root, ctx->execution_arena);
-    
-    if (out_value) {
-      *out_value = val;
-    }
     return true;
   }
   EXCEPT(MALFORMED_JSON) {
@@ -269,8 +256,7 @@ bool jsonv_ctx_parse_data(
 
 bool jsonv_ctx_validate(
     Jsonv_Context *ctx,
-    const Jsonv_Schema *schema,
-    Value data_value
+    const Jsonv_Schema *schema
 ) {
   /*#region*/
   assert(ctx);
@@ -279,11 +265,55 @@ bool jsonv_ctx_validate(
   memset(&ctx->last_error, 0, sizeof(E));
   ctx->has_error = false;
 
-  bool ok = validate_value(ctx, schema, 0, data_value, "", &ctx->last_error);
+  if (ctx->data.top < 0) {
+    ctx->last_error.type = Jsonv_Malformed_json;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Empty AST");
+    ctx->has_error = true;
+    return false;
+  }
+
+  bool ok = validate_ast(ctx, (ASTNode *)ctx->data.data, schema, 0, 0, "", &ctx->last_error);
   if (!ok) {
     ctx->has_error = true;
   }
   return ok;
+  /*#endregion*/
+}
+
+bool jsonv_ctx_get_value(
+    Jsonv_Context *ctx,
+    Value *out_value
+) {
+  /*#region*/
+  assert(ctx);
+  assert(out_value);
+  
+  if (ctx->data.top < 0) {
+    *out_value = val_undefined();
+    return false;
+  }
+  
+  TRY {
+    ASTNode *pool = (ASTNode *)ctx->data.data;
+    Shape *exe_root = jsonv_shape_root();
+    if (!exe_root) return false;
+    *out_value = ast_to_value(pool, &ctx->data_keytree, 0, exe_root, ctx->execution_arena);
+    return true;
+  }
+  EXCEPT(Mem_Failed) {
+    ctx->last_error.type = Jsonv_Mem_Failed;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Memory Allocation Failed");
+    ctx->has_error = true;
+  }
+  EXCEPT(ARENA_LIMIT_REACHED) {
+    ctx->last_error.type = Jsonv_Arena_Limit_Reached;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Arena Limit Reached");
+    ctx->has_error = true;
+    RAISE(ARENA_LIMIT_REACHED);
+  }
+  END_TRY;
+  
+  return false;
   /*#endregion*/
 }
 
@@ -306,8 +336,8 @@ void jsonv_ctx_reset(Jsonv_Context *ctx) {
   if (!ctx) return;
   memset(&ctx->last_error, 0, sizeof(E));
   ctx->has_error = false;
-  // Reset the transient execution arena
-  jsonv_arena_reset(ctx->execution_arena);
+  // Reset the transient execution arena but preserve the Jsonv_Context allocation
+  jsonv_arena_reset_to(ctx->execution_arena, sizeof(Jsonv_Context));
   // Clear the thread-local recycled free lists to prevent dangling pointer references
   jsonv_shape_clear_free_lists();
   /*#endregion*/

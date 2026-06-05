@@ -2,6 +2,7 @@
 #include "shape.internal.h"
 #include "schema.h"
 #include "ctx.h"
+#include "parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,39 +47,40 @@ struct Jsonv_Schema {
   int rule_count;
 };
 
-/* Helper: Compares a length-prefixed key string view against a token string view */
-static bool key_matches_token(const_lstr_t key, Token t) {
+
+/* Helper: Compares raw key view from AST against Schema rule Token */
+static bool key_matches_token_ast(const char *k_start, size_t k_len, Token t) {
   /*#region*/
   if (t.type != T_STRING) return false;
   
   const char *t_start = (const char *)t.value.string.start;
   size_t t_len = t.value.string.length;
   
-  // Normalize quotes if necessary
+  // Strip quotes if they exist in schema representation
   if (t_len >= 2 && t_start[0] == '"' && t_start[t_len - 1] == '"') {
     t_start++;
     t_len -= 2;
   }
   
-  size_t k_len = ((const StringHeader *)key - 1)->length;
   if (k_len != t_len) return false;
-  
-  return memcmp(key, t_start, t_len) == 0;
+  return memcmp(k_start, t_start, t_len) == 0;
   /*#endregion*/
 }
 
-/* Recursive validation loop on transient Value structure */
-bool validate_value(
+/* Recursive validation loop on ASTNode pool index */
+bool validate_ast(
     Jsonv_Context *ctx,
+    ASTNode *pool,
     const Jsonv_Schema *schema,
     int rule_idx,
-    Value val,
+    int node_idx,
     const char *path,
     E *out_err
 ) {
   /*#region*/
   if (rule_idx < 0 || rule_idx >= schema->rule_count) return true;
   const SchemaRule *r = &schema->rules[rule_idx];
+  ASTNode *node = &pool[node_idx];
 
   // 1. SC_FALSE / Always Fail case
   if (r->type_mask == -1) {
@@ -91,34 +93,29 @@ bool validate_value(
   // 2. Type Mask Check
   if (r->type_mask > 0) {
     bool match = false;
-    switch (val.tag) {
-      case VAL_NULL:
-        match = (r->type_mask & TYPE_NULL);
-        break;
-      case VAL_BOOLEAN:
-        match = (r->type_mask & TYPE_BOOL);
-        break;
-      case VAL_INT:
-        match = (r->type_mask & TYPE_NUMBER) || (r->type_mask & TYPE_INTEGER);
-        break;
-      case VAL_DOUBLE:
-        match = (r->type_mask & TYPE_NUMBER);
-        if (match && (r->type_mask & TYPE_INTEGER)) {
-          // Double must be integer value
-          match = (val.as.d == (int64_t)val.as.d);
-        }
-        break;
-      case VAL_STRING:
-        match = (r->type_mask & TYPE_STRING);
-        break;
-      case VAL_ARRAY:
-        match = (r->type_mask & TYPE_ARRAY);
-        break;
-      case VAL_OBJ:
-        match = (r->type_mask & TYPE_OBJECT);
-        break;
-      default:
-        break;
+    if (node->type == AST_OBJECT) {
+      match = (r->type_mask & TYPE_OBJECT);
+    } else if (node->type == AST_ARRAY) {
+      match = (r->type_mask & TYPE_ARRAY);
+    } else if (node->type == AST_LEAF) {
+      switch (node->token.type) {
+        case T_NULL:
+          match = (r->type_mask & TYPE_NULL);
+          break;
+        case T_TRUE:
+        case T_FALSE:
+          match = (r->type_mask & TYPE_BOOL);
+          break;
+        case T_NUMBER:
+          match = (r->type_mask & TYPE_NUMBER) || 
+                  ((r->type_mask & TYPE_INTEGER) && (node->token.value.number == (int64_t)node->token.value.number));
+          break;
+        case T_STRING:
+          match = (r->type_mask & TYPE_STRING);
+          break;
+        default:
+          break;
+      }
     }
     
     if (!match) {
@@ -129,9 +126,9 @@ bool validate_value(
     }
   }
 
-  // 3. Number Constraints
-  if (val.tag == VAL_INT || val.tag == VAL_DOUBLE) {
-    double num = (val.tag == VAL_INT) ? (double)val.as.i : val.as.d;
+  // 3. Numeric Constraints
+  if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
+    double num = node->token.value.number;
     if (r->has_min && num < r->min) {
       out_err->type = Jsonv_Minimum_error;
       out_err->path = path;
@@ -147,8 +144,8 @@ bool validate_value(
   }
 
   // 4. String Constraints
-  if (val.tag == VAL_STRING) {
-    size_t len = val_str_len(val);
+  if (node->type == AST_LEAF && node->token.type == T_STRING) {
+    size_t len = node->token.value.string.length;
     if (r->min_len >= 0 && len < (size_t)r->min_len) {
       out_err->type = Jsonv_MinLength_error;
       out_err->path = path;
@@ -164,25 +161,48 @@ bool validate_value(
   }
 
   // 5. Array Constraints
-  if (val.tag == VAL_ARRAY && r->items_rule >= 0) {
-    Arr *arr = (Arr *)val.as.p;
-    for (int i = 0; i < arr->length; i++) {
-      char item_path[64];
-      snprintf(item_path, sizeof(item_path), "%s[%d]", path, i);
-      char *arena_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), strlen(item_path) + 1);
-      if (arena_path) {
-        strcpy(arena_path, item_path);
-      }
-      if (!validate_value(ctx, schema, r->items_rule, arr->items[i], arena_path ? arena_path : path, out_err)) {
-        return false;
+  if (node->type == AST_ARRAY) {
+    // Count items
+    int count = 0;
+    int child_idx = node->first_child;
+    while (child_idx != -1) {
+      count++;
+      child_idx = pool[child_idx].next_sibling;
+    }
+
+    if (r->min_items >= 0 && count < r->min_items) {
+      out_err->type = Jsonv_MinItems_error;
+      out_err->path = path;
+      snprintf(out_err->description, sizeof(out_err->description), "Array has too few items, expected >= %d, got %d.", r->min_items, count);
+      return false;
+    }
+    if (r->max_items >= 0 && count > r->max_items) {
+      out_err->type = Jsonv_MinItems_error;
+      out_err->path = path;
+      snprintf(out_err->description, sizeof(out_err->description), "Array has too many items, expected <= %d, got %d.", r->max_items, count);
+      return false;
+    }
+
+    // Validate child elements
+    if (r->items_rule >= 0) {
+      child_idx = node->first_child;
+      for (int i = 0; child_idx != -1; i++) {
+        char item_path[64];
+        snprintf(item_path, sizeof(item_path), "%s[%d]", path, i);
+        char *arena_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), strlen(item_path) + 1);
+        if (arena_path) {
+          strcpy(arena_path, item_path);
+        }
+        if (!validate_ast(ctx, pool, schema, r->items_rule, child_idx, arena_path ? arena_path : path, out_err)) {
+          return false;
+        }
+        child_idx = pool[child_idx].next_sibling;
       }
     }
   }
 
   // 6. Object Constraints
-  if (val.tag == VAL_OBJ) {
-    Obj *obj = (Obj *)val.as.p;
-    
+  if (node->type == AST_OBJECT) {
     // A. Check Required Properties
     for (int i = 0; i < r->required_count; i++) {
       Token t = r->required[i];
@@ -199,17 +219,8 @@ bool validate_value(
       memcpy(req_key, t_start, t_len);
       req_key[t_len] = '\0';
       
-      // Construct length-prefixed StringHeader to match
-      size_t total_size = sizeof(StringHeader) + t_len + 1;
-      StringHeader *header = (StringHeader *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), total_size);
-      if (!header) return false;
-      header->length = (uint32_t)t_len;
-      memcpy(header->data, t_start, t_len);
-      header->data[t_len] = '\0';
-      const_lstr_t lstr_key = (const_lstr_t)header->data;
-      
-      Value dummy;
-      if (!obj_get(obj, lstr_key, &dummy)) {
+      int val_idx = find_property(pool, node_idx, req_key);
+      if (val_idx == -1) {
         out_err->type = Jsonv_Required_error;
         out_err->path = path;
         snprintf(out_err->description, sizeof(out_err->description), "Missing required field '%.*s'.", (int)t_len, t_start);
@@ -218,37 +229,44 @@ bool validate_value(
     }
 
     // B. Check Properties and AdditionalProperties
-    if (obj->shape) {
-      for (int slot = 0; slot < obj->shape->slot_count; slot++) {
-        const_lstr_t key = shape_get_key_at(obj->shape, slot);
-        Value p_val = obj->slots[slot];
+    int curr = node->first_child;
+    while (curr != -1) {
+      if (pool[curr].type != AST_SKIPPED) {
+        Token k = pool[curr].token;
+        int val_idx = pool[curr].next_sibling;
         
+        // Extract key string view
+        const char *k_start = (const char *)k.value.string.start;
+        size_t k_len = k.value.string.length;
+        
+        // Match against properties in the SchemaRule
         bool matched = false;
         int prop_rule_idx = -1;
-        for (int k = 0; k < r->prop_count; k++) {
-          if (key_matches_token(key, r->props[k].key)) {
+        for (int p = 0; p < r->prop_count; p++) {
+          if (key_matches_token_ast(k_start, k_len, r->props[p].key)) {
             matched = true;
-            prop_rule_idx = r->props[k].rule_index;
+            prop_rule_idx = r->props[p].rule_index;
             break;
           }
         }
         
-        // Construct new path
+        // Construct new path for validation errors
         size_t p_len = strlen(path);
-        size_t k_len = ((const StringHeader *)key - 1)->length;
         size_t needed = p_len + k_len + 2;
         char *new_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), needed);
         if (new_path) {
           if (p_len > 0) {
-            snprintf(new_path, needed, "%s.%.*s", path, (int)k_len, key);
+            snprintf(new_path, needed, "%s.%.*s", path, (int)k_len, k_start);
           } else {
-            snprintf(new_path, needed, "%.*s", (int)k_len, key);
+            snprintf(new_path, needed, "%.*s", (int)k_len, k_start);
           }
         }
         
         if (matched) {
-          if (!validate_value(ctx, schema, prop_rule_idx, p_val, new_path ? new_path : path, out_err)) {
-            return false;
+          if (val_idx != -1) {
+            if (!validate_ast(ctx, pool, schema, prop_rule_idx, val_idx, new_path ? new_path : path, out_err)) {
+              return false;
+            }
           }
         } else {
           // Check additional properties rule
@@ -258,12 +276,18 @@ bool validate_value(
             snprintf(out_err->description, sizeof(out_err->description), "Additional property not allowed.");
             return false;
           } else if (r->additional_props_rule >= 0) {
-            if (!validate_value(ctx, schema, r->additional_props_rule, p_val, new_path ? new_path : path, out_err)) {
-              return false;
+            if (val_idx != -1) {
+              if (!validate_ast(ctx, pool, schema, r->additional_props_rule, val_idx, new_path ? new_path : path, out_err)) {
+                return false;
+              }
             }
           }
         }
       }
+      
+      int val_idx = pool[curr].next_sibling;
+      if (val_idx == -1) break;
+      curr = pool[val_idx].next_sibling;
     }
   }
 
