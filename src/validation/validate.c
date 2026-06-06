@@ -683,6 +683,33 @@ bool validate_bytecode(
         /*#endregion*/
       }
 
+      case OP_CONTAINS: {
+        /*#region*/
+        uint32_t contains_offset = read_uint32(&pc);
+        if (node->type == AST_ARRAY) {
+          bool contains_valid = false;
+          int child_idx = node->first_child;
+          while (child_idx != -1) {
+            if (pool[child_idx].type != AST_SKIPPED) {
+              E temp_err = {0};
+              if (validate_bytecode(ctx, pool, schema, contains_offset, child_idx, path, &temp_err)) {
+                contains_valid = true;
+                break;
+              }
+            }
+            child_idx = pool[child_idx].next_sibling;
+          }
+          if (!contains_valid) {
+            out_err->type = Jsonv_Contains_error;
+            out_err->path = path;
+            snprintf(out_err->description, sizeof(out_err->description), "Array does not contain any item matching the subschema.");
+            return false;
+          }
+        }
+        break;
+        /*#endregion*/
+      }
+
       default:
         // Invalid opcode
         return false;

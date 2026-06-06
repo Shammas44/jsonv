@@ -284,6 +284,19 @@ Asserts that all elements in an array are unique.
 * **Format**: `[0x12]` (1 byte)
 * **VM Semantics**: If the current data node is an array, the VM recursively compares every element against all subsequent elements. If any two elements are equal, validation aborts with a `Jsonv_UniqueItems_error`. Non-array nodes ignore this instruction.
 
+---
+
+### 3.J OP_CONTAINS (0x13)
+Asserts that at least one element in an array matches the subschema.
+```
++-----------------+---------------------------+
+| OP_CONTAINS(0x13)|     offset (uint32_t)     |
++-----------------+---------------------------+
+```
+* **Format**: `[0x13] [4 bytes offset]` (5 bytes)
+* **VM Semantics**: If the current data node is an array, the interpreter loops through all children elements and recursively executes `validate_bytecode` using the target `offset`. If at least one element passes, the validation is successful. If no element passes or the array is empty, validation aborts with a `Jsonv_Contains_error`. Non-array nodes ignore this instruction.
+
+
 
 
 

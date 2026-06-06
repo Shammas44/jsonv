@@ -343,3 +343,27 @@ TIMED_TEST(T, unique_items_validation, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, contains_validation, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\"type\": \"array\", \"contains\": {\"type\": \"integer\", \"minimum\": 5}}";
+
+  // Arrays containing at least one integer >= 5
+  cr_expect(run_validation(schema, "[1, 2, 5]", &err));
+  cr_expect(run_validation(schema, "[10, \"hello\", true]", &err));
+  cr_expect(run_validation(schema, "[5]", &err));
+
+  // Arrays not containing any integer >= 5
+  cr_expect(!run_validation(schema, "[]", &err));
+  cr_expect_eq(err.type, Jsonv_Contains_error);
+
+  cr_expect(!run_validation(schema, "[1, 2, 3, 4]", &err));
+  cr_expect_eq(err.type, Jsonv_Contains_error);
+
+  cr_expect(!run_validation(schema, "[\"hello\", true, null]", &err));
+  cr_expect_eq(err.type, Jsonv_Contains_error);
+/*#endregion*/
+END_TIMED_TEST
+
+

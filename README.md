@@ -31,7 +31,7 @@ These keywords constrain the number of items and the schemas of items within an 
 - [x] `minItems`: Array must have a number of items >= to this value.
 - [x] `items` Defines the schema for the items in the array.
 - [x] `uniqueItems`: If `true`, all items in the array must be unique.
-- [ ] `contains`: Array is valid only if **at least one** of its items validates against schema.
+- [x] `contains`: Array is valid only if **at least one** of its items validates against schema.
 
 ## Object Keywords (for `object`)
 

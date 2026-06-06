@@ -132,6 +132,7 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   bool has_min_items = false;
   bool has_max_items = false;
   bool has_items = false;
+  bool has_contains = false;
   int required_count = 0;
   int prop_count = 0;
   bool has_additional_props = false;
@@ -179,6 +180,10 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
     } else if (token_equals(key->token, "items")) {
       if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
         has_items = true;
+      }
+    } else if (token_equals(key->token, "contains")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        has_contains = true;
       }
     } else if (token_equals(key->token, "required") && val->type == AST_ARRAY) {
       int r_idx = val->first_child;
@@ -244,6 +249,9 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   if (has_items) {
     own_size += 1 + sizeof(uint32_t);
   }
+  if (has_contains) {
+    own_size += 1 + sizeof(uint32_t);
+  }
   if (required_count > 0) {
     own_size += 1 + sizeof(uint32_t) + required_count * sizeof(Token);
   }
@@ -261,6 +269,11 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
     ASTNode *val = &nodes[key_idx + 1];
 
     if (token_equals(key->token, "items")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size);
+        total_size += sub_size;
+      }
+    } else if (token_equals(key->token, "contains")) {
       if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
         uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size);
         total_size += sub_size;
@@ -333,6 +346,8 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
   bool has_unique_items = false;
   bool has_items = false;
   int items_val_idx = -1;
+  bool has_contains = false;
+  int contains_val_idx = -1;
   int required_count = 0;
   int required_val_idx = -1;
   int prop_count = 0;
@@ -398,6 +413,11 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
       if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
         has_items = true;
         items_val_idx = key_idx + 1;
+      }
+    } else if (token_equals(key->token, "contains")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        has_contains = true;
+        contains_val_idx = key_idx + 1;
       }
     } else if (token_equals(key->token, "required") && val->type == AST_ARRAY) {
       required_val_idx = key_idx + 1;
@@ -480,6 +500,10 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
     emit_byte(&pc, OP_ITEMS);
     emit_uint32(&pc, offsets[items_val_idx]);
   }
+  if (has_contains) {
+    emit_byte(&pc, OP_CONTAINS);
+    emit_uint32(&pc, offsets[contains_val_idx]);
+  }
   if (required_count > 0 && required_val_idx != -1) {
     emit_byte(&pc, OP_REQUIRED);
     emit_uint32(&pc, (uint32_t)required_count);
@@ -525,6 +549,10 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
     ASTNode *val = &nodes[key_idx + 1];
 
     if (token_equals(key->token, "items")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, write_ptr);
+      }
+    } else if (token_equals(key->token, "contains")) {
       if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
         serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, write_ptr);
       }

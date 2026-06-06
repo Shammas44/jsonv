@@ -24,6 +24,7 @@ typedef enum {
   Jsonv_MinItems_error,
   Jsonv_Required_error,
   Jsonv_UniqueItems_error,
+  Jsonv_Contains_error,
   // else
   Jsonv_ValueNotAllowed_error,
   Jsonv_Malformed_json,
