@@ -320,8 +320,6 @@ Asserts that the data instance validates against all subschemas listed.
 * **Format**: `[0x15] [4 bytes count] [count * 4 bytes offsets]`
 * **VM Semantics**: The interpreter recursively validates the current data node against each of the `count` subschemas at their corresponding absolute bytecode `offsets`. If all validations return `true`, the validation is successful. If any validation fails, validation aborts with a `Jsonv_AllOf_error`. All arguments are fully decoded sequentially from the instruction stream.
 
----
-
 ### 3.M OP_ANY_OF (0x16)
 Asserts that the data instance validates against at least one subschema listed.
 ```
@@ -332,11 +330,14 @@ Asserts that the data instance validates against at least one subschema listed.
 * **Format**: `[0x16] [4 bytes count] [count * 4 bytes offsets]`
 * **VM Semantics**: The interpreter recursively validates the current data node against each of the `count` subschemas at their corresponding absolute bytecode `offsets`. If at least one validation returns `true`, the validation is successful. If all validations fail, validation aborts with a `Jsonv_AnyOf_error`. All arguments are fully decoded sequentially from the instruction stream.
 
+---
 
-
-
-
-
-
-
-
+### 3.N OP_ONE_OF (0x17)
+Asserts that the data instance validates against exactly one of the subschemas listed.
+```
++---------------+-------------------+---------------------------------+
+| OP_ONE_OF(0x17)|  count (uint32_t)  |    offsets[count] (uint32_t[])  |
++---------------+-------------------+---------------------------------+
+```
+* **Format**: `[0x17] [4 bytes count] [count * 4 bytes offsets]`
+* **VM Semantics**: The interpreter recursively validates the current data node against each of the `count` subschemas at their corresponding absolute bytecode `offsets`. If exactly one validation returns `true`, the validation is successful. If zero or more than one subschemas validate successfully, validation aborts with a `Jsonv_OneOf_error`. All arguments are fully decoded sequentially from the instruction stream.

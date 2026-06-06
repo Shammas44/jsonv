@@ -28,6 +28,7 @@ typedef enum {
   Jsonv_Not_error,
   Jsonv_AllOf_error,
   Jsonv_AnyOf_error,
+  Jsonv_OneOf_error,
   // else
   Jsonv_ValueNotAllowed_error,
   Jsonv_Malformed_json,

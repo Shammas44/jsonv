@@ -770,6 +770,27 @@ bool validate_bytecode(
         /*#endregion*/
       }
 
+      case OP_ONE_OF: {
+        /*#region*/
+        uint32_t count = read_uint32(&pc);
+        uint32_t valid_count = 0;
+        for (uint32_t i = 0; i < count; i++) {
+          uint32_t sub_offset = read_uint32(&pc);
+          E temp_err = {0};
+          if (validate_bytecode(ctx, pool, schema, sub_offset, node_idx, path, &temp_err)) {
+            valid_count++;
+          }
+        }
+        if (valid_count != 1) {
+          out_err->type = Jsonv_OneOf_error;
+          out_err->path = path;
+          snprintf(out_err->description, sizeof(out_err->description), "Value must validate against exactly one subschema in oneOf (validated against %u).", valid_count);
+          return false;
+        }
+        break;
+        /*#endregion*/
+      }
+
       default:
         // Invalid opcode
         return false;
