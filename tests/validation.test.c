@@ -384,5 +384,31 @@ TIMED_TEST(T, not_validation, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, all_of_validation, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\n"
+                       "  \"allOf\": [\n"
+                       "    {\"type\": \"string\"},\n"
+                       "    {\"minLength\": 5}\n"
+                       "  ]\n"
+                       "}";
+
+  // Strings of length >= 5
+  cr_expect(run_validation(schema, "\"hello\"", &err));
+  cr_expect(run_validation(schema, "\"abcdef\"", &err));
+
+  // Non-strings (fails first subschema)
+  cr_expect(!run_validation(schema, "123", &err));
+  cr_expect_eq(err.type, Jsonv_AllOf_error);
+
+  // Strings of length < 5 (fails second subschema)
+  cr_expect(!run_validation(schema, "\"abc\"", &err));
+  cr_expect_eq(err.type, Jsonv_AllOf_error);
+/*#endregion*/
+END_TIMED_TEST
+
+
 
 

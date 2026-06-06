@@ -724,6 +724,29 @@ bool validate_bytecode(
         /*#endregion*/
       }
 
+      case OP_ALL_OF: {
+        /*#region*/
+        uint32_t count = read_uint32(&pc);
+        bool all_valid = true;
+        for (uint32_t i = 0; i < count; i++) {
+          uint32_t sub_offset = read_uint32(&pc);
+          if (all_valid) {
+            E temp_err = {0};
+            if (!validate_bytecode(ctx, pool, schema, sub_offset, node_idx, path, &temp_err)) {
+              all_valid = false;
+            }
+          }
+        }
+        if (!all_valid) {
+          out_err->type = Jsonv_AllOf_error;
+          out_err->path = path;
+          snprintf(out_err->description, sizeof(out_err->description), "Value must validate against all subschemas in allOf.");
+          return false;
+        }
+        break;
+        /*#endregion*/
+      }
+
       default:
         // Invalid opcode
         return false;

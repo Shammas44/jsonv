@@ -308,6 +308,19 @@ Asserts that the data instance does not validate against the subschema.
 * **Format**: `[0x14] [4 bytes offset]` (5 bytes)
 * **VM Semantics**: The interpreter recursively validates the current data node against the subschema at the absolute bytecode `offset`. If the subschema validation returns `true` (validates successfully), validation aborts with a `Jsonv_Not_error`. If it returns `false`, validation succeeds.
 
+---
+
+### 3.L OP_ALL_OF (0x15)
+Asserts that the data instance validates against all subschemas listed.
+```
++---------------+-------------------+---------------------------------+
+| OP_ALL_OF(0x15)|  count (uint32_t)  |    offsets[count] (uint32_t[])  |
++---------------+-------------------+---------------------------------+
+```
+* **Format**: `[0x15] [4 bytes count] [count * 4 bytes offsets]`
+* **VM Semantics**: The interpreter recursively validates the current data node against each of the `count` subschemas at their corresponding absolute bytecode `offsets`. If all validations return `true`, the validation is successful. If any validation fails, validation aborts with a `Jsonv_AllOf_error`. All arguments are fully decoded sequentially from the instruction stream.
+
+
 
 
 
