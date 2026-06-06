@@ -791,6 +791,31 @@ bool validate_bytecode(
         /*#endregion*/
       }
 
+      case OP_IF_THEN_ELSE: {
+        /*#region*/
+        uint32_t if_offset = read_uint32(&pc);
+        uint32_t then_offset = read_uint32(&pc);
+        uint32_t else_offset = read_uint32(&pc);
+
+        E temp_err = {0};
+        bool if_passed = validate_bytecode(ctx, pool, schema, if_offset, node_idx, path, &temp_err);
+        if (if_passed) {
+          if (then_offset != (uint32_t)-1) {
+            if (!validate_bytecode(ctx, pool, schema, then_offset, node_idx, path, out_err)) {
+              return false;
+            }
+          }
+        } else {
+          if (else_offset != (uint32_t)-1) {
+            if (!validate_bytecode(ctx, pool, schema, else_offset, node_idx, path, out_err)) {
+              return false;
+            }
+          }
+        }
+        break;
+        /*#endregion*/
+      }
+
       default:
         // Invalid opcode
         return false;

@@ -109,6 +109,19 @@ static inline void emit_token(uint8_t **pc, Token val) {
   /*#endregion*/
 }
 
+static int object_find_key_val_idx(const ASTNode *nodes, int obj_idx, const char *key_name) {
+  /*#region*/
+  int key_idx = nodes[obj_idx].first_child;
+  while (key_idx != -1) {
+    if (token_equals(nodes[key_idx].token, key_name)) {
+      return key_idx + 1;
+    }
+    key_idx = nodes[key_idx + 1].next_sibling;
+  }
+  return -1;
+  /*#endregion*/
+}
+
 // --- DIRECT COMPILER PASS 1: SIZE CALCULATION ---
 
 static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *offsets, uint32_t current_offset) {
@@ -150,6 +163,7 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   bool has_min_props = false;
   bool has_max_props = false;
   bool has_unique_items = false;
+  bool has_if = false;
 
   int key_idx = nodes[node_idx].first_child;
   while (key_idx != -1) {
@@ -176,6 +190,10 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
       has_max_props = true;
     } else if (token_equals(key->token, "uniqueItems")) {
       has_unique_items = is_ast_true(val);
+    } else if (token_equals(key->token, "if")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        has_if = true;
+      }
     } else if (token_equals(key->token, "minLength")) {
       has_min_len = true;
     } else if (token_equals(key->token, "maxLength")) {
@@ -296,6 +314,9 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   if (has_one_of) {
     own_size += 1 + sizeof(uint32_t) + one_of_count * sizeof(uint32_t);
   }
+  if (has_if) {
+    own_size += 1 + 3 * sizeof(uint32_t);
+  }
   if (required_count > 0) {
     own_size += 1 + sizeof(uint32_t) + required_count * sizeof(Token);
   }
@@ -353,6 +374,25 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
           total_size += sub_size;
         }
         sub_idx = nodes[sub_idx].next_sibling;
+      }
+    } else if (token_equals(key->token, "if")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size);
+        total_size += sub_size;
+      }
+    } else if (token_equals(key->token, "then")) {
+      if (object_find_key_val_idx(nodes, node_idx, "if") != -1) {
+        if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+          uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size);
+          total_size += sub_size;
+        }
+      }
+    } else if (token_equals(key->token, "else")) {
+      if (object_find_key_val_idx(nodes, node_idx, "if") != -1) {
+        if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+          uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size);
+          total_size += sub_size;
+        }
       }
     } else if (token_equals(key->token, "properties") && val->type == AST_OBJECT) {
       int p_idx = val->first_child;
@@ -435,6 +475,10 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
   bool has_one_of = false;
   int one_of_val_idx = -1;
   int one_of_count = 0;
+  bool has_if = false;
+  int if_val_idx = -1;
+  int then_val_idx = -1;
+  int else_val_idx = -1;
   int required_count = 0;
   int required_val_idx = -1;
   int prop_count = 0;
@@ -534,6 +578,19 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
       while (sub_idx != -1) {
         one_of_count++;
         sub_idx = nodes[sub_idx].next_sibling;
+      }
+    } else if (token_equals(key->token, "if")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        has_if = true;
+        if_val_idx = key_idx + 1;
+      }
+    } else if (token_equals(key->token, "then")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        then_val_idx = key_idx + 1;
+      }
+    } else if (token_equals(key->token, "else")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        else_val_idx = key_idx + 1;
       }
     } else if (token_equals(key->token, "required") && val->type == AST_ARRAY) {
       required_val_idx = key_idx + 1;
@@ -651,6 +708,12 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
       sub_idx = nodes[sub_idx].next_sibling;
     }
   }
+  if (has_if && if_val_idx != -1) {
+    emit_byte(&pc, OP_IF_THEN_ELSE);
+    emit_uint32(&pc, offsets[if_val_idx]);
+    emit_uint32(&pc, (then_val_idx != -1) ? offsets[then_val_idx] : (uint32_t)-1);
+    emit_uint32(&pc, (else_val_idx != -1) ? offsets[else_val_idx] : (uint32_t)-1);
+  }
   if (required_count > 0 && required_val_idx != -1) {
     emit_byte(&pc, OP_REQUIRED);
     emit_uint32(&pc, (uint32_t)required_count);
@@ -730,6 +793,22 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
           serialize_schema_direct(nodes, sub_idx, offsets, bytecode, write_ptr);
         }
         sub_idx = nodes[sub_idx].next_sibling;
+      }
+    } else if (token_equals(key->token, "if")) {
+      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+        serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, write_ptr);
+      }
+    } else if (token_equals(key->token, "then")) {
+      if (object_find_key_val_idx(nodes, node_idx, "if") != -1) {
+        if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+          serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, write_ptr);
+        }
+      }
+    } else if (token_equals(key->token, "else")) {
+      if (object_find_key_val_idx(nodes, node_idx, "if") != -1) {
+        if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
+          serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, write_ptr);
+        }
       }
     } else if (token_equals(key->token, "properties") && val->type == AST_OBJECT) {
       int p_idx = val->first_child;

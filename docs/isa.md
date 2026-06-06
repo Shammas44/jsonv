@@ -341,3 +341,22 @@ Asserts that the data instance validates against exactly one of the subschemas l
 ```
 * **Format**: `[0x17] [4 bytes count] [count * 4 bytes offsets]`
 * **VM Semantics**: The interpreter recursively validates the current data node against each of the `count` subschemas at their corresponding absolute bytecode `offsets`. If exactly one validation returns `true`, the validation is successful. If zero or more than one subschemas validate successfully, validation aborts with a `Jsonv_OneOf_error`. All arguments are fully decoded sequentially from the instruction stream.
+
+---
+
+### 3.O OP_IF_THEN_ELSE (0x18)
+Conditional application of subschemas.
+```
++----------------------+----------------------+----------------------+----------------------+
+| OP_IF_THEN_ELSE(0x18)|  if_offset (uint32_t)| then_offset (uint32_t)| else_offset (uint32_t)|
++----------------------+----------------------+----------------------+----------------------+
+```
+* **Format**: `[0x18] [4 bytes if_offset] [4 bytes then_offset] [4 bytes else_offset]`
+* **VM Semantics**: Recursively evaluates the subschema at `if_offset` against the current data node.
+  * If the `if` subschema validates successfully:
+    * If `then_offset` is not `(uint32_t)-1` (denoting absent `then` schema), recursively evaluates the subschema at `then_offset`. The outcome of this validation determines the overall outcome.
+    * If `then_offset` is `(uint32_t)-1`, validation succeeds immediately.
+  * If the `if` subschema fails validation:
+    * If `else_offset` is not `(uint32_t)-1` (denoting absent `else` schema), recursively evaluates the subschema at `else_offset`. The outcome of this validation determines the overall outcome.
+    * If `else_offset` is `(uint32_t)-1`, validation succeeds immediately.
+

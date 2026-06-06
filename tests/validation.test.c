@@ -467,8 +467,36 @@ TIMED_TEST(T, one_of_validation, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, if_then_else_validation, init, fini)
+/*#region*/
+  E err = {0};
 
+  // If the value is an integer, it must be a multiple of 10.
+  // Otherwise (if it's not an integer), it must be a string of maxLength 5.
+  const char *schema = "{\n"
+                       "  \"if\": {\"type\": \"integer\"},\n"
+                       "  \"then\": {\"multipleOf\": 10},\n"
+                       "  \"else\": {\"type\": \"string\", \"maxLength\": 5}\n"
+                       "}";
 
+  // Case 1: integer that is multiple of 10 -> passes
+  cr_expect(run_validation(schema, "20", &err));
+  cr_expect(run_validation(schema, "100", &err));
 
+  // Case 2: integer that is not multiple of 10 -> fails then
+  cr_expect(!run_validation(schema, "15", &err));
+  cr_expect_eq(err.type, Jsonv_MultipleOf_error);
 
+  // Case 3: not an integer, but string of maxLength 5 -> passes
+  cr_expect(run_validation(schema, "\"hello\"", &err));
+  cr_expect(run_validation(schema, "\"abc\"", &err));
 
+  // Case 4: not an integer, but string of length > 5 -> fails else
+  cr_expect(!run_validation(schema, "\"hello_world\"", &err));
+  cr_expect_eq(err.type, Jsonv_MaxLength_error);
+
+  // Case 5: not an integer and not a string -> fails else
+  cr_expect(!run_validation(schema, "true", &err));
+  cr_expect_eq(err.type, Jsonv_Type_error);
+/*#endregion*/
+END_TIMED_TEST
