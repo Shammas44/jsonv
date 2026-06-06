@@ -20,20 +20,7 @@ extern const Except MAXIMUM_VALUES_REACHED;
 extern const Except ARENA_LIMIT_REACHED;
 extern const Except MAXIMUM_TOKEN_BYTES_REACHED;
 
-extern bool validate_bytecode(
-    Jsonv_Context *ctx,
-    ASTNode *pool,
-    const Jsonv_Schema *schema,
-    uint32_t offset,
-    int node_idx,
-    const char *path,
-    E *out_err
-);
 
-struct Jsonv_Schema {
-  uint8_t *bytecode;
-  uint32_t length;
-};
 
 struct Jsonv_Context {
   Jsonv_Arena *execution_arena;
