@@ -165,7 +165,7 @@ int map_type_string_to_mask(Token t) {
 
 // --- MAIN COMPILER LOGIC ---
 
-SchemaRule *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_count) {
+static SchemaRule *compile_schema_to_rules(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_count) {
   /*#region*/
   if (ast_count <= 0) return NULL;
   
@@ -350,6 +350,201 @@ SchemaRule *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, in
   /*#endregion*/
 }
 
+static inline void emit_byte(uint8_t **pc, uint8_t val) {
+  /*#region*/
+  **pc = val;
+  (*pc)++;
+  /*#endregion*/
+}
+
+static inline void emit_uint32(uint8_t **pc, uint32_t val) {
+  /*#region*/
+  memcpy(*pc, &val, sizeof(val));
+  *pc += sizeof(val);
+  /*#endregion*/
+}
+
+static inline void emit_int32(uint8_t **pc, int32_t val) {
+  /*#region*/
+  memcpy(*pc, &val, sizeof(val));
+  *pc += sizeof(val);
+  /*#endregion*/
+}
+
+static inline void emit_double(uint8_t **pc, double val) {
+  /*#region*/
+  memcpy(*pc, &val, sizeof(val));
+  *pc += sizeof(val);
+  /*#endregion*/
+}
+
+static inline void emit_token(uint8_t **pc, Token val) {
+  /*#region*/
+  memcpy(*pc, &val, sizeof(val));
+  *pc += sizeof(val);
+  /*#endregion*/
+}
+
+static uint32_t get_rule_serialized_size(const SchemaRule *r) {
+  /*#region*/
+  uint32_t size = 0;
+  if (r->type_mask == -1) {
+    size += 1; // OP_FAIL
+    return size;
+  }
+  if (r->type_mask > 0) {
+    size += 1 + sizeof(uint32_t); // OP_TYPE + mask
+  }
+  if (r->has_min) {
+    size += 1 + sizeof(double); // OP_MINIMUM + min
+  }
+  if (r->has_max) {
+    size += 1 + sizeof(double); // OP_MAXIMUM + max
+  }
+  if (r->min_len >= 0) {
+    size += 1 + sizeof(int32_t); // OP_MIN_LENGTH + min_len
+  }
+  if (r->max_len >= 0) {
+    size += 1 + sizeof(int32_t); // OP_MAX_LENGTH + max_len
+  }
+  if (r->min_items >= 0) {
+    size += 1 + sizeof(int32_t); // OP_MIN_ITEMS + min_items
+  }
+  if (r->max_items >= 0) {
+    size += 1 + sizeof(int32_t); // OP_MAX_ITEMS + max_items
+  }
+  if (r->items_rule >= 0) {
+    size += 1 + sizeof(uint32_t); // OP_ITEMS + offset
+  }
+  if (r->required_count > 0) {
+    size += 1 + sizeof(uint32_t) + r->required_count * sizeof(Token); // OP_REQUIRED + count + tokens
+  }
+  if (r->prop_count > 0 || r->additional_props_rule != -1) {
+    size += 1 + sizeof(uint32_t) + sizeof(int32_t) + r->prop_count * (sizeof(Token) + sizeof(uint32_t)); // OP_PROPERTIES + count + add_rule + key/offset pairs
+  }
+  size += 1; // OP_END
+  return size;
+  /*#endregion*/
+}
+
+static uint8_t *serialize_schema(Jsonv_Arena *arena, const SchemaRule *rules, int rule_count, int *out_length) {
+  /*#region*/
+  if (rule_count <= 0) {
+    *out_length = 0;
+    return NULL;
+  }
+
+  // Step 1: Compute starting offset of each rule
+  uint32_t *offsets = (uint32_t *)jsonv_arena_alloc(arena, rule_count * sizeof(uint32_t));
+  if (!offsets) return NULL;
+
+  uint32_t total_size = 0;
+  for (int i = 0; i < rule_count; i++) {
+    offsets[i] = total_size;
+    total_size += get_rule_serialized_size(&rules[i]);
+  }
+
+  // Step 2: Allocate the compact contiguous bytecode array
+  uint8_t *bytecode = (uint8_t *)jsonv_arena_alloc(arena, total_size);
+  if (!bytecode) return NULL;
+
+  uint8_t *pc = bytecode;
+
+  // Step 3: Serialize each rule
+  for (int i = 0; i < rule_count; i++) {
+    const SchemaRule *r = &rules[i];
+
+    if (r->type_mask == -1) {
+      emit_byte(&pc, OP_FAIL);
+      continue;
+    }
+
+    if (r->type_mask > 0) {
+      emit_byte(&pc, OP_TYPE);
+      emit_uint32(&pc, (uint32_t)r->type_mask);
+    }
+
+    if (r->has_min) {
+      emit_byte(&pc, OP_MINIMUM);
+      emit_double(&pc, r->min);
+    }
+
+    if (r->has_max) {
+      emit_byte(&pc, OP_MAXIMUM);
+      emit_double(&pc, r->max);
+    }
+
+    if (r->min_len >= 0) {
+      emit_byte(&pc, OP_MIN_LENGTH);
+      emit_int32(&pc, (int32_t)r->min_len);
+    }
+
+    if (r->max_len >= 0) {
+      emit_byte(&pc, OP_MAX_LENGTH);
+      emit_int32(&pc, (int32_t)r->max_len);
+    }
+
+    if (r->min_items >= 0) {
+      emit_byte(&pc, OP_MIN_ITEMS);
+      emit_int32(&pc, (int32_t)r->min_items);
+    }
+
+    if (r->max_items >= 0) {
+      emit_byte(&pc, OP_MAX_ITEMS);
+      emit_int32(&pc, (int32_t)r->max_items);
+    }
+
+    if (r->items_rule >= 0) {
+      emit_byte(&pc, OP_ITEMS);
+      emit_uint32(&pc, offsets[r->items_rule]);
+    }
+
+    if (r->required_count > 0) {
+      emit_byte(&pc, OP_REQUIRED);
+      emit_uint32(&pc, (uint32_t)r->required_count);
+      for (int k = 0; k < r->required_count; k++) {
+        emit_token(&pc, r->required[k]);
+      }
+    }
+
+    if (r->prop_count > 0 || r->additional_props_rule != -1) {
+      emit_byte(&pc, OP_PROPERTIES);
+      emit_uint32(&pc, (uint32_t)r->prop_count);
+      int32_t add_rule = r->additional_props_rule;
+      if (add_rule >= 0) {
+        add_rule = (int32_t)offsets[add_rule];
+      }
+      emit_int32(&pc, add_rule);
+
+      for (int k = 0; k < r->prop_count; k++) {
+        emit_token(&pc, r->props[k].key);
+        uint32_t target_offset = 0;
+        if (r->props[k].rule_index >= 0) {
+          target_offset = offsets[r->props[k].rule_index];
+        }
+        emit_uint32(&pc, target_offset);
+      }
+    }
+
+    emit_byte(&pc, OP_END);
+  }
+
+  *out_length = (int)total_size;
+  return bytecode;
+  /*#endregion*/
+}
+
+uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_length) {
+  /*#region*/
+  int rule_count = 0;
+  SchemaRule *rules = compile_schema_to_rules(arena, nodes, ast_count, root_idx, &rule_count);
+  if (!rules) {
+    return NULL;
+  }
+  return serialize_schema(arena, rules, rule_count, out_length);
+  /*#endregion*/
+}
+
 // --- DEBUGGING ---
 
 void print_token(Token t) {
@@ -375,67 +570,3 @@ void print_token(Token t) {
   /*#endregion*/
 }
 
-void print_schema_rules(SchemaRule *rules, int count) {
-  /*#region*/
-  printf("=== COMPILED SCHEMA (%d rules) ===\n", count);
-  for (int i = 0; i < count; i++) {
-    SchemaRule *r = &rules[i];
-    printf("RULE [%d]:\n", i);
-
-    if (r->type_mask) {
-      printf("  Type Mask: 0x%X ( ", r->type_mask);
-      if (r->type_mask & TYPE_STRING)
-        printf("String ");
-      if (r->type_mask & TYPE_NUMBER)
-        printf("Number ");
-      if (r->type_mask & TYPE_OBJECT)
-        printf("Object ");
-      if (r->type_mask & TYPE_ARRAY)
-        printf("Array ");
-      if (r->type_mask & TYPE_BOOL)
-        printf("Bool ");
-      if (r->type_mask & TYPE_NULL)
-        printf("Null ");
-      printf(")\n");
-    }
-
-    if (r->has_min)
-      printf("  Min: %g\n", r->min);
-    if (r->has_max)
-      printf("  Max: %g\n", r->max);
-    if (r->min_len != -1)
-      printf("  MinLen: %d\n", r->min_len);
-    if (r->max_len != -1)
-      printf("  MaxLen: %d\n", r->max_len);
-
-    if (r->items_rule != -1)
-      printf("  Items -> Rule %d\n", r->items_rule);
-
-    if (r->prop_count > 0) {
-      printf("  Properties (%d):\n", r->prop_count);
-      for (int k = 0; k < r->prop_count; k++) {
-        printf("    - ");
-        print_token(r->props[k].key);
-        printf(": -> Rule %d\n", r->props[k].rule_index);
-      }
-    }
-
-    if (r->required_count > 0) {
-      printf("  Required: [");
-      for (int k = 0; k < r->required_count; k++) {
-        print_token(r->required[k]);
-        printf(k < r->required_count - 1 ? ", " : "");
-      }
-      printf("]\n");
-    }
-
-    if (r->additional_props_rule == -2)
-      printf("  AddlProps: DISALLOWED\n");
-    else if (r->additional_props_rule >= 0)
-      printf("  AddlProps: -> Rule %d\n", r->additional_props_rule);
-
-    printf("\n");
-  }
-  printf("==================================\n");
-  /*#endregion*/
-}

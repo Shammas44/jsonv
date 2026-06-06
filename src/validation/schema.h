@@ -2,10 +2,23 @@
 #define _JSONV_SCHEMA_H_INCLUDED
 #include "parser.h"
 #include "arena.h"
+#include <stdint.h>
 
-typedef struct SchemaRule SchemaRule;
+typedef enum {
+  OP_END = 0,
+  OP_FAIL,
+  OP_TYPE,
+  OP_MINIMUM,
+  OP_MAXIMUM,
+  OP_MIN_LENGTH,
+  OP_MAX_LENGTH,
+  OP_MIN_ITEMS,
+  OP_MAX_ITEMS,
+  OP_ITEMS,
+  OP_REQUIRED,
+  OP_PROPERTIES
+} Opcode;
 
-SchemaRule *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_count);
-void print_schema_rules(SchemaRule *rules, int count);
+uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_length);
 
 #endif
