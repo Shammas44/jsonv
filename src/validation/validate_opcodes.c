@@ -1,20 +1,18 @@
 #include "validate_internal.h"
 
-static bool handle_fail(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_fail(VMState *state) {
   /*#region*/
-  (void)ctx; (void)pool; (void)schema; (void)pc; (void)node_idx; (void)constant_pool;
-  out_err->type = Jsonv_ValueNotAllowed_error;
-  out_err->path = path;
-  snprintf(out_err->description, sizeof(out_err->description), "Value not allowed (Schema is false).");
+  state->out_err->type = Jsonv_ValueNotAllowed_error;
+  state->out_err->path = state->path;
+  snprintf(state->out_err->description, sizeof(state->out_err->description), "Value not allowed (Schema is false).");
   return false;
   /*#endregion*/
 }
 
-static bool handle_type(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_type(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  uint32_t type_mask = read_uint32(pc);
-  ASTNode *node = &pool[node_idx];
+  uint32_t type_mask = read_uint32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   bool match = false;
   if (node->type == AST_OBJECT) {
     match = (type_mask & TYPE_OBJECT);
@@ -42,26 +40,25 @@ static bool handle_type(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *s
   }
   
   if (!match) {
-    out_err->type = Jsonv_Type_error;
-    out_err->path = path;
-    snprintf(out_err->description, sizeof(out_err->description), "Type mismatch.");
+    state->out_err->type = Jsonv_Type_error;
+    state->out_err->path = state->path;
+    snprintf(state->out_err->description, sizeof(state->out_err->description), "Type mismatch.");
     return false;
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_minimum(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_minimum(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  double min_val = read_double(pc);
-  ASTNode *node = &pool[node_idx];
+  double min_val = read_double(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
     double num = node->token.value.number;
     if (num < min_val) {
-      out_err->type = Jsonv_Minimum_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Value too small, expected >= %.2f, got %.2f.", min_val, num);
+      state->out_err->type = Jsonv_Minimum_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Value too small, expected >= %.2f, got %.2f.", min_val, num);
       return false;
     }
   }
@@ -69,17 +66,16 @@ static bool handle_minimum(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema
   /*#endregion*/
 }
 
-static bool handle_maximum(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_maximum(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  double max_val = read_double(pc);
-  ASTNode *node = &pool[node_idx];
+  double max_val = read_double(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
     double num = node->token.value.number;
     if (num > max_val) {
-      out_err->type = Jsonv_Maximum_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Value too large, expected <= %.2f, got %.2f.", max_val, num);
+      state->out_err->type = Jsonv_Maximum_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Value too large, expected <= %.2f, got %.2f.", max_val, num);
       return false;
     }
   }
@@ -87,17 +83,16 @@ static bool handle_maximum(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema
   /*#endregion*/
 }
 
-static bool handle_min_length(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_min_length(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  int32_t min_len = read_int32(pc);
-  ASTNode *node = &pool[node_idx];
+  int32_t min_len = read_int32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_STRING) {
     size_t len = node->token.value.string.length;
     if (len < (size_t)min_len) {
-      out_err->type = Jsonv_MinLength_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "String too short, expected >= %d, got %lu.", min_len, len);
+      state->out_err->type = Jsonv_MinLength_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "String too short, expected >= %d, got %lu.", min_len, len);
       return false;
     }
   }
@@ -105,17 +100,16 @@ static bool handle_min_length(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sch
   /*#endregion*/
 }
 
-static bool handle_max_length(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_max_length(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  int32_t max_len = read_int32(pc);
-  ASTNode *node = &pool[node_idx];
+  int32_t max_len = read_int32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_STRING) {
     size_t len = node->token.value.string.length;
     if (len > (size_t)max_len) {
-      out_err->type = Jsonv_MaxLength_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "String too long, expected <= %d, got %lu.", max_len, len);
+      state->out_err->type = Jsonv_MaxLength_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "String too long, expected <= %d, got %lu.", max_len, len);
       return false;
     }
   }
@@ -123,22 +117,21 @@ static bool handle_max_length(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sch
   /*#endregion*/
 }
 
-static bool handle_min_items(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_min_items(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  int32_t min_items = read_int32(pc);
-  ASTNode *node = &pool[node_idx];
+  int32_t min_items = read_int32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_ARRAY) {
     int count = 0;
     int child_idx = node->first_child;
     while (child_idx != -1) {
       count++;
-      child_idx = pool[child_idx].next_sibling;
+      child_idx = state->pool[child_idx].next_sibling;
     }
     if (count < min_items) {
-      out_err->type = Jsonv_MinItems_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Array has too few items, expected >= %d, got %d.", min_items, count);
+      state->out_err->type = Jsonv_MinItems_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Array has too few items, expected >= %d, got %d.", min_items, count);
       return false;
     }
   }
@@ -146,22 +139,21 @@ static bool handle_min_items(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sche
   /*#endregion*/
 }
 
-static bool handle_max_items(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_max_items(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  int32_t max_items = read_int32(pc);
-  ASTNode *node = &pool[node_idx];
+  int32_t max_items = read_int32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_ARRAY) {
     int count = 0;
     int child_idx = node->first_child;
     while (child_idx != -1) {
       count++;
-      child_idx = pool[child_idx].next_sibling;
+      child_idx = state->pool[child_idx].next_sibling;
     }
     if (count > max_items) {
-      out_err->type = Jsonv_MinItems_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Array has too many items, expected <= %d, got %d.", max_items, count);
+      state->out_err->type = Jsonv_MinItems_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Array has too many items, expected <= %d, got %d.", max_items, count);
       return false;
     }
   }
@@ -169,82 +161,80 @@ static bool handle_max_items(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sche
   /*#endregion*/
 }
 
-static bool handle_items(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_items(VMState *state) {
   /*#region*/
-  (void)constant_pool;
-  uint32_t items_offset = read_uint32(pc);
-  ASTNode *node = &pool[node_idx];
+  uint32_t items_offset = read_uint32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_ARRAY) {
     int child_idx = node->first_child;
     for (int i = 0; child_idx != -1; i++) {
       char item_path[64];
-      snprintf(item_path, sizeof(item_path), "%s[%d]", path, i);
-      char *arena_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), strlen(item_path) + 1);
+      snprintf(item_path, sizeof(item_path), "%s[%d]", state->path, i);
+      char *arena_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), strlen(item_path) + 1);
       if (arena_path) {
         strcpy(arena_path, item_path);
       }
-      if (!validate_bytecode(ctx, pool, schema, items_offset, child_idx, arena_path ? arena_path : path, out_err)) {
+      if (!validate_bytecode(state->ctx, state->pool, state->schema, items_offset, child_idx, arena_path ? arena_path : state->path, state->out_err)) {
         return false;
       }
-      child_idx = pool[child_idx].next_sibling;
+      child_idx = state->pool[child_idx].next_sibling;
     }
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_required(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_required(VMState *state) {
   /*#region*/
-  (void)schema;
-  uint32_t count = read_uint32(pc);
-  ASTNode *node = &pool[node_idx];
+  uint32_t count = read_uint32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_OBJECT) {
     for (uint32_t i = 0; i < count; i++) {
-      uint32_t req_offset = read_uint32(pc);
-      uint32_t req_len = read_uint32(pc);
-      const char *req_start = (const char *)(constant_pool + req_offset);
+      uint32_t req_offset = read_uint32(&state->pc);
+      uint32_t req_len = read_uint32(&state->pc);
+      const char *req_start = (const char *)(state->constant_pool + req_offset);
       
       // Make a temporary null-terminated string to look up
-      char *req_key = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), req_len + 1);
+      char *req_key = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), req_len + 1);
       if (!req_key) return false;
       memcpy(req_key, req_start, req_len);
       req_key[req_len] = '\0';
       
-      int val_idx = find_property(pool, node_idx, req_key);
+      int val_idx = find_property(state->pool, state->node_idx, req_key);
       if (val_idx == -1) {
-        out_err->type = Jsonv_Required_error;
-        out_err->path = path;
-        snprintf(out_err->description, sizeof(out_err->description), "Missing required field '%.*s'.", (int)req_len, req_start);
+        state->out_err->type = Jsonv_Required_error;
+        state->out_err->path = state->path;
+        snprintf(state->out_err->description, sizeof(state->out_err->description), "Missing required field '%.*s'.", (int)req_len, req_start);
         return false;
       }
     }
   } else {
-    *pc += count * (sizeof(uint32_t) + sizeof(uint32_t));
+    state->pc += count * (sizeof(uint32_t) + sizeof(uint32_t));
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_properties(VMState *state) {
   /*#region*/
-  uint32_t prop_count = read_uint32(pc);
-  uint32_t pattern_prop_count = read_uint32(pc);
-  int32_t additional_props_rule = read_int32(pc);
+  uint32_t prop_count = read_uint32(&state->pc);
+  uint32_t pattern_prop_count = read_uint32(&state->pc);
+  int32_t additional_props_rule = read_int32(&state->pc);
 
   DecodedPropertyRule *props = NULL;
   DecodedPropertyRule stack_props[64];
   if (prop_count <= 64) {
     props = stack_props;
   } else {
-    props = (DecodedPropertyRule *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), prop_count * sizeof(DecodedPropertyRule));
+    props = (DecodedPropertyRule *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), prop_count * sizeof(DecodedPropertyRule));
     if (!props) return false;
   }
 
   for (uint32_t k = 0; k < prop_count; k++) {
-    uint32_t key_offset = read_uint32(pc);
-    props[k].key_len = read_uint32(pc);
-    props[k].key_start = (const char *)(constant_pool + key_offset);
-    props[k].rule_offset = read_uint32(pc);
+    uint32_t key_offset = read_uint32(&state->pc);
+    props[k].key_len = read_uint32(&state->pc);
+    props[k].key_start = (const char *)(state->constant_pool + key_offset);
+    props[k].rule_offset = read_uint32(&state->pc);
   }
 
   DecodedPropertyRule *pattern_props = NULL;
@@ -252,24 +242,24 @@ static bool handle_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sch
   if (pattern_prop_count <= 64) {
     pattern_props = stack_pattern_props;
   } else {
-    pattern_props = (DecodedPropertyRule *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), pattern_prop_count * sizeof(DecodedPropertyRule));
+    pattern_props = (DecodedPropertyRule *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), pattern_prop_count * sizeof(DecodedPropertyRule));
     if (!pattern_props) return false;
   }
 
   for (uint32_t k = 0; k < pattern_prop_count; k++) {
-    uint32_t key_offset = read_uint32(pc);
-    pattern_props[k].key_len = read_uint32(pc);
-    pattern_props[k].key_start = (const char *)(constant_pool + key_offset);
-    pattern_props[k].rule_offset = read_uint32(pc);
+    uint32_t key_offset = read_uint32(&state->pc);
+    pattern_props[k].key_len = read_uint32(&state->pc);
+    pattern_props[k].key_start = (const char *)(state->constant_pool + key_offset);
+    pattern_props[k].rule_offset = read_uint32(&state->pc);
   }
 
-  ASTNode *node = &pool[node_idx];
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_OBJECT) {
     int curr = node->first_child;
     while (curr != -1) {
-      if (pool[curr].type != AST_SKIPPED) {
-        Token k = pool[curr].token;
-        int val_idx = pool[curr].next_sibling;
+      if (state->pool[curr].type != AST_SKIPPED) {
+        Token k = state->pool[curr].token;
+        int val_idx = state->pool[curr].next_sibling;
 
         // Extract key string view
         const char *k_start = (const char *)k.value.string.start;
@@ -280,12 +270,12 @@ static bool handle_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sch
         }
 
         // Construct new path for validation errors
-        size_t p_len = strlen(path);
+        size_t p_len = strlen(state->path);
         size_t needed = p_len + k_len + 2;
-        char *new_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), needed);
+        char *new_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), needed);
         if (new_path) {
           if (p_len > 0) {
-            snprintf(new_path, needed, "%s.%.*s", path, (int)k_len, k_start);
+            snprintf(new_path, needed, "%s.%.*s", state->path, (int)k_len, k_start);
           } else {
             snprintf(new_path, needed, "%.*s", (int)k_len, k_start);
           }
@@ -298,7 +288,7 @@ static bool handle_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sch
           if (k_len == props[p].key_len && memcmp(k_start, props[p].key_start, k_len) == 0) {
             matched = true;
             if (val_idx != -1) {
-              if (!validate_bytecode(ctx, pool, schema, props[p].rule_offset, val_idx, new_path ? new_path : path, out_err)) {
+              if (!validate_bytecode(state->ctx, state->pool, state->schema, props[p].rule_offset, val_idx, new_path ? new_path : state->path, state->out_err)) {
                 return false;
               }
             }
@@ -310,15 +300,15 @@ static bool handle_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sch
         bool compile_failed = false;
         for (uint32_t p = 0; p < pattern_prop_count; p++) {
           E temp_err = {0};
-          if (regex_matches_key(k_start, k_len, pattern_props[p].key_start, pattern_props[p].key_len, ctx, path, &temp_err)) {
+          if (regex_matches_key(k_start, k_len, pattern_props[p].key_start, pattern_props[p].key_len, state->ctx, state->path, &temp_err)) {
             matched = true;
             if (val_idx != -1) {
-              if (!validate_bytecode(ctx, pool, schema, pattern_props[p].rule_offset, val_idx, new_path ? new_path : path, out_err)) {
+              if (!validate_bytecode(state->ctx, state->pool, state->schema, pattern_props[p].rule_offset, val_idx, new_path ? new_path : state->path, state->out_err)) {
                 return false;
               }
             }
           } else if (temp_err.type == Jsonv_Compile_Regexp_Failed) {
-            *out_err = temp_err;
+            *state->out_err = temp_err;
             compile_failed = true;
             break;
           }
@@ -328,13 +318,13 @@ static bool handle_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sch
         // Match against additionalProperties if not matched by either
         if (!matched) {
           if (additional_props_rule == -2) {
-            out_err->type = Jsonv_AdditionalProperties_error;
-            out_err->path = new_path ? new_path : path;
-            snprintf(out_err->description, sizeof(out_err->description), "Additional property not allowed.");
+            state->out_err->type = Jsonv_AdditionalProperties_error;
+            state->out_err->path = new_path ? new_path : state->path;
+            snprintf(state->out_err->description, sizeof(state->out_err->description), "Additional property not allowed.");
             return false;
           } else if (additional_props_rule >= 0) {
             if (val_idx != -1) {
-              if (!validate_bytecode(ctx, pool, schema, (uint32_t)additional_props_rule, val_idx, new_path ? new_path : path, out_err)) {
+              if (!validate_bytecode(state->ctx, state->pool, state->schema, (uint32_t)additional_props_rule, val_idx, new_path ? new_path : state->path, state->out_err)) {
                 return false;
               }
             }
@@ -342,29 +332,28 @@ static bool handle_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sch
         }
       }
 
-      int val_idx = pool[curr].next_sibling;
+      int val_idx = state->pool[curr].next_sibling;
       if (val_idx == -1) break;
-      curr = pool[val_idx].next_sibling;
+      curr = state->pool[val_idx].next_sibling;
     }
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_multiple_of(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_multiple_of(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  double mult_val = read_double(pc);
-  ASTNode *node = &pool[node_idx];
+  double mult_val = read_double(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
     double num = node->token.value.number;
     double quot = num / mult_val;
     double diff = quot - (double)(int64_t)(quot + (quot > 0.0 ? 0.5 : -0.5));
     if (diff < 0.0) diff = -diff;
     if (diff > 1e-9) {
-      out_err->type = Jsonv_MultipleOf_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Value %g is not a multiple of %g.", num, mult_val);
+      state->out_err->type = Jsonv_MultipleOf_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Value %g is not a multiple of %g.", num, mult_val);
       return false;
     }
   }
@@ -372,17 +361,16 @@ static bool handle_multiple_of(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Sc
   /*#endregion*/
 }
 
-static bool handle_exclusive_minimum(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_exclusive_minimum(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  double min_val = read_double(pc);
-  ASTNode *node = &pool[node_idx];
+  double min_val = read_double(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
     double num = node->token.value.number;
     if (num <= min_val) {
-      out_err->type = Jsonv_ExclusiveMinimum_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Value too small, expected > %.2f, got %.2f.", min_val, num);
+      state->out_err->type = Jsonv_ExclusiveMinimum_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Value too small, expected > %.2f, got %.2f.", min_val, num);
       return false;
     }
   }
@@ -390,17 +378,16 @@ static bool handle_exclusive_minimum(Jsonv_Context *ctx, ASTNode *pool, const Js
   /*#endregion*/
 }
 
-static bool handle_exclusive_maximum(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_exclusive_maximum(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  double max_val = read_double(pc);
-  ASTNode *node = &pool[node_idx];
+  double max_val = read_double(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
     double num = node->token.value.number;
     if (num >= max_val) {
-      out_err->type = Jsonv_ExclusiveMaximum_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Value too large, expected < %.2f, got %.2f.", max_val, num);
+      state->out_err->type = Jsonv_ExclusiveMaximum_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Value too large, expected < %.2f, got %.2f.", max_val, num);
       return false;
     }
   }
@@ -408,13 +395,12 @@ static bool handle_exclusive_maximum(Jsonv_Context *ctx, ASTNode *pool, const Js
   /*#endregion*/
 }
 
-static bool handle_pattern(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_pattern(VMState *state) {
   /*#region*/
-  (void)schema;
-  uint32_t pat_offset = read_uint32(pc);
-  uint32_t pat_len = read_uint32(pc);
-  const char *pat_start = (const char *)(constant_pool + pat_offset);
-  ASTNode *node = &pool[node_idx];
+  uint32_t pat_offset = read_uint32(&state->pc);
+  uint32_t pat_len = read_uint32(&state->pc);
+  const char *pat_start = (const char *)(state->constant_pool + pat_offset);
+  ASTNode *node = &state->pool[state->node_idx];
 
   if (node->type == AST_LEAF && node->token.type == T_STRING) {
     const char *val_start = (const char *)node->token.value.string.start;
@@ -424,21 +410,21 @@ static bool handle_pattern(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema
       val_len -= 2;
     }
 
-    char *target_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), val_len + 1);
+    char *target_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), val_len + 1);
     if (!target_str) return false;
     memcpy(target_str, val_start, val_len);
     target_str[val_len] = '\0';
 
-    char *pattern_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), pat_len + 1);
+    char *pattern_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), pat_len + 1);
     if (!pattern_str) return false;
     memcpy(pattern_str, pat_start, pat_len);
     pattern_str[pat_len] = '\0';
 
     regex_t regex;
     if (regcomp(&regex, pattern_str, REG_EXTENDED | REG_NOSUB) != 0) {
-      out_err->type = Jsonv_Compile_Regexp_Failed;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Failed to compile regex pattern '%s'.", pattern_str);
+      state->out_err->type = Jsonv_Compile_Regexp_Failed;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Failed to compile regex pattern '%s'.", pattern_str);
       return false;
     }
 
@@ -446,9 +432,9 @@ static bool handle_pattern(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema
     regfree(&regex);
 
     if (match_res != 0) {
-      out_err->type = Jsonv_Pattern_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "String '%s' does not match pattern '%s'.", target_str, pattern_str);
+      state->out_err->type = Jsonv_Pattern_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "String '%s' does not match pattern '%s'.", target_str, pattern_str);
       return false;
     }
   }
@@ -456,26 +442,25 @@ static bool handle_pattern(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema
   /*#endregion*/
 }
 
-static bool handle_min_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_min_properties(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  int32_t min_props = read_int32(pc);
-  ASTNode *node = &pool[node_idx];
+  int32_t min_props = read_int32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_OBJECT) {
     int count = 0;
     int curr = node->first_child;
     while (curr != -1) {
-      if (pool[curr].type != AST_SKIPPED) {
+      if (state->pool[curr].type != AST_SKIPPED) {
         count++;
       }
-      int val_idx = pool[curr].next_sibling;
+      int val_idx = state->pool[curr].next_sibling;
       if (val_idx == -1) break;
-      curr = pool[val_idx].next_sibling;
+      curr = state->pool[val_idx].next_sibling;
     }
     if (count < min_props) {
-      out_err->type = Jsonv_MinProperties_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Object has too few properties, expected >= %d, got %d.", min_props, count);
+      state->out_err->type = Jsonv_MinProperties_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Object has too few properties, expected >= %d, got %d.", min_props, count);
       return false;
     }
   }
@@ -483,26 +468,25 @@ static bool handle_min_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv
   /*#endregion*/
 }
 
-static bool handle_max_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_max_properties(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)constant_pool;
-  int32_t max_props = read_int32(pc);
-  ASTNode *node = &pool[node_idx];
+  int32_t max_props = read_int32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_OBJECT) {
     int count = 0;
     int curr = node->first_child;
     while (curr != -1) {
-      if (pool[curr].type != AST_SKIPPED) {
+      if (state->pool[curr].type != AST_SKIPPED) {
         count++;
       }
-      int val_idx = pool[curr].next_sibling;
+      int val_idx = state->pool[curr].next_sibling;
       if (val_idx == -1) break;
-      curr = pool[val_idx].next_sibling;
+      curr = state->pool[val_idx].next_sibling;
     }
     if (count > max_props) {
-      out_err->type = Jsonv_MaxProperties_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Object has too many properties, expected <= %d, got %d.", max_props, count);
+      state->out_err->type = Jsonv_MaxProperties_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Object has too many properties, expected <= %d, got %d.", max_props, count);
       return false;
     }
   }
@@ -510,56 +494,54 @@ static bool handle_max_properties(Jsonv_Context *ctx, ASTNode *pool, const Jsonv
   /*#endregion*/
 }
 
-static bool handle_unique_items(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_unique_items(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema; (void)pc; (void)constant_pool;
-  ASTNode *node = &pool[node_idx];
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_ARRAY) {
     int c1 = node->first_child;
     while (c1 != -1) {
-      if (pool[c1].type != AST_SKIPPED) {
-        int c2 = pool[c1].next_sibling;
+      if (state->pool[c1].type != AST_SKIPPED) {
+        int c2 = state->pool[c1].next_sibling;
         while (c2 != -1) {
-          if (pool[c2].type != AST_SKIPPED) {
-            if (ast_nodes_equal(pool, c1, c2)) {
-              out_err->type = Jsonv_UniqueItems_error;
-              out_err->path = path;
-              snprintf(out_err->description, sizeof(out_err->description), "Array items must be unique.");
+          if (state->pool[c2].type != AST_SKIPPED) {
+            if (ast_nodes_equal(state->pool, c1, c2)) {
+              state->out_err->type = Jsonv_UniqueItems_error;
+              state->out_err->path = state->path;
+              snprintf(state->out_err->description, sizeof(state->out_err->description), "Array items must be unique.");
               return false;
             }
           }
-          c2 = pool[c2].next_sibling;
+          c2 = state->pool[c2].next_sibling;
         }
       }
-      c1 = pool[c1].next_sibling;
+      c1 = state->pool[c1].next_sibling;
     }
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_contains(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_contains(VMState *state) {
   /*#region*/
-  (void)constant_pool;
-  uint32_t contains_offset = read_uint32(pc);
-  ASTNode *node = &pool[node_idx];
+  uint32_t contains_offset = read_uint32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_ARRAY) {
     bool contains_valid = false;
     int child_idx = node->first_child;
     while (child_idx != -1) {
-      if (pool[child_idx].type != AST_SKIPPED) {
+      if (state->pool[child_idx].type != AST_SKIPPED) {
         E temp_err = {0};
-        if (validate_bytecode(ctx, pool, schema, contains_offset, child_idx, path, &temp_err)) {
+        if (validate_bytecode(state->ctx, state->pool, state->schema, contains_offset, child_idx, state->path, &temp_err)) {
           contains_valid = true;
           break;
         }
       }
-      child_idx = pool[child_idx].next_sibling;
+      child_idx = state->pool[child_idx].next_sibling;
     }
     if (!contains_valid) {
-      out_err->type = Jsonv_Contains_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "Array does not contain any item matching the subschema.");
+      state->out_err->type = Jsonv_Contains_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "Array does not contain any item matching the subschema.");
       return false;
     }
   }
@@ -567,109 +549,104 @@ static bool handle_contains(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schem
   /*#endregion*/
 }
 
-static bool handle_not(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_not(VMState *state) {
   /*#region*/
-  (void)constant_pool;
-  uint32_t not_offset = read_uint32(pc);
+  uint32_t not_offset = read_uint32(&state->pc);
   E temp_err = {0};
-  if (validate_bytecode(ctx, pool, schema, not_offset, node_idx, path, &temp_err)) {
-    out_err->type = Jsonv_Not_error;
-    out_err->path = path;
-    snprintf(out_err->description, sizeof(out_err->description), "Value must not validate against subschema.");
+  if (validate_bytecode(state->ctx, state->pool, state->schema, not_offset, state->node_idx, state->path, &temp_err)) {
+    state->out_err->type = Jsonv_Not_error;
+    state->out_err->path = state->path;
+    snprintf(state->out_err->description, sizeof(state->out_err->description), "Value must not validate against subschema.");
     return false;
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_all_of(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_all_of(VMState *state) {
   /*#region*/
-  (void)constant_pool;
-  uint32_t count = read_uint32(pc);
+  uint32_t count = read_uint32(&state->pc);
   bool all_valid = true;
   for (uint32_t i = 0; i < count; i++) {
-    uint32_t sub_offset = read_uint32(pc);
+    uint32_t sub_offset = read_uint32(&state->pc);
     if (all_valid) {
       E temp_err = {0};
-      if (!validate_bytecode(ctx, pool, schema, sub_offset, node_idx, path, &temp_err)) {
+      if (!validate_bytecode(state->ctx, state->pool, state->schema, sub_offset, state->node_idx, state->path, &temp_err)) {
         all_valid = false;
       }
     }
   }
   if (!all_valid) {
-    out_err->type = Jsonv_AllOf_error;
-    out_err->path = path;
-    snprintf(out_err->description, sizeof(out_err->description), "Value must validate against all subschemas in allOf.");
+    state->out_err->type = Jsonv_AllOf_error;
+    state->out_err->path = state->path;
+    snprintf(state->out_err->description, sizeof(state->out_err->description), "Value must validate against all subschemas in allOf.");
     return false;
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_any_of(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_any_of(VMState *state) {
   /*#region*/
-  (void)constant_pool;
-  uint32_t count = read_uint32(pc);
+  uint32_t count = read_uint32(&state->pc);
   bool any_valid = false;
   for (uint32_t i = 0; i < count; i++) {
-    uint32_t sub_offset = read_uint32(pc);
+    uint32_t sub_offset = read_uint32(&state->pc);
     if (!any_valid) {
       E temp_err = {0};
-      if (validate_bytecode(ctx, pool, schema, sub_offset, node_idx, path, &temp_err)) {
+      if (validate_bytecode(state->ctx, state->pool, state->schema, sub_offset, state->node_idx, state->path, &temp_err)) {
         any_valid = true;
       }
     }
   }
   if (!any_valid) {
-    out_err->type = Jsonv_AnyOf_error;
-    out_err->path = path;
-    snprintf(out_err->description, sizeof(out_err->description), "Value must validate against at least one subschema in anyOf.");
+    state->out_err->type = Jsonv_AnyOf_error;
+    state->out_err->path = state->path;
+    snprintf(state->out_err->description, sizeof(state->out_err->description), "Value must validate against at least one subschema in anyOf.");
     return false;
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_one_of(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_one_of(VMState *state) {
   /*#region*/
-  (void)constant_pool;
-  uint32_t count = read_uint32(pc);
+  uint32_t count = read_uint32(&state->pc);
   uint32_t valid_count = 0;
   for (uint32_t i = 0; i < count; i++) {
-    uint32_t sub_offset = read_uint32(pc);
+    uint32_t sub_offset = read_uint32(&state->pc);
     E temp_err = {0};
-    if (validate_bytecode(ctx, pool, schema, sub_offset, node_idx, path, &temp_err)) {
+    if (validate_bytecode(state->ctx, state->pool, state->schema, sub_offset, state->node_idx, state->path, &temp_err)) {
       valid_count++;
     }
   }
   if (valid_count != 1) {
-    out_err->type = Jsonv_OneOf_error;
-    out_err->path = path;
-    snprintf(out_err->description, sizeof(out_err->description), "Value must validate against exactly one subschema in oneOf (validated against %u).", valid_count);
+    state->out_err->type = Jsonv_OneOf_error;
+    state->out_err->path = state->path;
+    snprintf(state->out_err->description, sizeof(state->out_err->description), "Value must validate against exactly one subschema in oneOf (validated against %u).", valid_count);
     return false;
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_if_then_else(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_if_then_else(VMState *state) {
   /*#region*/
-  (void)constant_pool;
-  uint32_t if_offset = read_uint32(pc);
-  uint32_t then_offset = read_uint32(pc);
-  uint32_t else_offset = read_uint32(pc);
+  uint32_t if_offset = read_uint32(&state->pc);
+  uint32_t then_offset = read_uint32(&state->pc);
+  uint32_t else_offset = read_uint32(&state->pc);
 
   E temp_err = {0};
-  bool if_passed = validate_bytecode(ctx, pool, schema, if_offset, node_idx, path, &temp_err);
+  bool if_passed = validate_bytecode(state->ctx, state->pool, state->schema, if_offset, state->node_idx, state->path, &temp_err);
   if (if_passed) {
     if (then_offset != (uint32_t)-1) {
-      if (!validate_bytecode(ctx, pool, schema, then_offset, node_idx, path, out_err)) {
+      if (!validate_bytecode(state->ctx, state->pool, state->schema, then_offset, state->node_idx, state->path, state->out_err)) {
         return false;
       }
     }
   } else {
     if (else_offset != (uint32_t)-1) {
-      if (!validate_bytecode(ctx, pool, schema, else_offset, node_idx, path, out_err)) {
+      if (!validate_bytecode(state->ctx, state->pool, state->schema, else_offset, state->node_idx, state->path, state->out_err)) {
         return false;
       }
     }
@@ -678,16 +655,15 @@ static bool handle_if_then_else(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_S
   /*#endregion*/
 }
 
-static bool handle_property_names(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_property_names(VMState *state) {
   /*#region*/
-  (void)constant_pool;
-  uint32_t sub_offset = read_uint32(pc);
-  ASTNode *node = &pool[node_idx];
+  uint32_t sub_offset = read_uint32(&state->pc);
+  ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_OBJECT) {
     int curr = node->first_child;
     while (curr != -1) {
-      if (pool[curr].type != AST_SKIPPED) {
-        Token k = pool[curr].token;
+      if (state->pool[curr].type != AST_SKIPPED) {
+        Token k = state->pool[curr].token;
         const char *k_start = (const char *)k.value.string.start;
         size_t k_len = k.value.string.length;
         if (k_len >= 2 && k_start[0] == '"' && k_start[k_len - 1] == '"') {
@@ -696,37 +672,36 @@ static bool handle_property_names(Jsonv_Context *ctx, ASTNode *pool, const Jsonv
         }
 
         // Construct new path
-        size_t p_len = strlen(path);
+        size_t p_len = strlen(state->path);
         size_t needed = p_len + k_len + 2;
-        char *new_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), needed);
+        char *new_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), needed);
         if (new_path) {
           if (p_len > 0) {
-            snprintf(new_path, needed, "%s.%.*s", path, (int)k_len, k_start);
+            snprintf(new_path, needed, "%s.%.*s", state->path, (int)k_len, k_start);
           } else {
             snprintf(new_path, needed, "%.*s", (int)k_len, k_start);
           }
         }
 
-        if (!validate_bytecode(ctx, pool, schema, sub_offset, curr, new_path ? new_path : path, out_err)) {
+        if (!validate_bytecode(state->ctx, state->pool, state->schema, sub_offset, curr, new_path ? new_path : state->path, state->out_err)) {
           return false;
         }
       }
-      int val_idx = pool[curr].next_sibling;
+      int val_idx = state->pool[curr].next_sibling;
       if (val_idx == -1) break;
-      curr = pool[val_idx].next_sibling;
+      curr = state->pool[val_idx].next_sibling;
     }
   }
   return true;
   /*#endregion*/
 }
 
-static bool handle_format(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema *schema, const uint8_t **pc, int node_idx, const char *path, E *out_err, const uint8_t *constant_pool) {
+static bool handle_format(VMState *state) {
   /*#region*/
-  (void)ctx; (void)schema;
-  uint32_t fmt_offset = read_uint32(pc);
-  uint32_t fmt_len = read_uint32(pc);
-  const char *fmt_start = (const char *)(constant_pool + fmt_offset);
-  ASTNode *node = &pool[node_idx];
+  uint32_t fmt_offset = read_uint32(&state->pc);
+  uint32_t fmt_len = read_uint32(&state->pc);
+  const char *fmt_start = (const char *)(state->constant_pool + fmt_offset);
+  ASTNode *node = &state->pool[state->node_idx];
 
   if (node->type == AST_LEAF && node->token.type == T_STRING) {
     const char *val_start = (const char *)node->token.value.string.start;
@@ -748,9 +723,9 @@ static bool handle_format(Jsonv_Context *ctx, ASTNode *pool, const Jsonv_Schema 
     }
 
     if (!valid) {
-      out_err->type = Jsonv_Format_error;
-      out_err->path = path;
-      snprintf(out_err->description, sizeof(out_err->description), "String '%.*s' does not conform to format '%.*s'.", (int)val_len, val_start, (int)fmt_len, fmt_start);
+      state->out_err->type = Jsonv_Format_error;
+      state->out_err->path = state->path;
+      snprintf(state->out_err->description, sizeof(state->out_err->description), "String '%.*s' does not conform to format '%.*s'.", (int)val_len, val_start, (int)fmt_len, fmt_start);
       return false;
     }
   }

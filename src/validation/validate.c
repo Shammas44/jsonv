@@ -27,12 +27,19 @@ bool validate_bytecode(
     }
   }
 
-  const uint8_t *constant_pool = schema->bytecode + sizeof(BytecodeHeader) + header.code_size;
-  const uint8_t *pc = schema->bytecode + offset;
+  VMState state;
+  state.ctx = ctx;
+  state.pool = pool;
+  state.schema = schema;
+  state.pc = schema->bytecode + offset;
+  state.node_idx = node_idx;
+  state.path = path;
+  state.out_err = out_err;
+  state.constant_pool = schema->bytecode + sizeof(BytecodeHeader) + header.code_size;
 
   bool running = true;
   while (running) {
-    uint8_t opcode = read_byte(&pc);
+    uint8_t opcode = read_byte(&state.pc);
     if (opcode == OP_END) {
       running = false;
       break;
@@ -44,7 +51,7 @@ bool validate_bytecode(
 
     OpcodeHandler handler = opcode_handlers[opcode];
     if (handler) {
-      if (!handler(ctx, pool, schema, &pc, node_idx, path, out_err, constant_pool)) {
+      if (!handler(&state)) {
         return false;
       }
     } else {

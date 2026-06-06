@@ -11,13 +11,22 @@
 #include <string.h>
 #include <regex.h>
 
-
-
 typedef struct {
   const char *key_start;
   uint32_t key_len;
   uint32_t rule_offset;
 } DecodedPropertyRule;
+
+typedef struct {
+  Jsonv_Context *ctx;
+  ASTNode *pool;
+  const Jsonv_Schema *schema;
+  const uint8_t *pc;
+  int node_idx;
+  const char *path;
+  E *out_err;
+  const uint8_t *constant_pool;
+} VMState;
 
 /* Bytecode Reading Helpers */
 static inline uint8_t read_byte(const uint8_t **pc) {
@@ -64,16 +73,7 @@ bool validate_datetime(const char *s, size_t len);
 bool ast_nodes_equal(const ASTNode *pool, int n1_idx, int n2_idx);
 
 /* Handler signature for opcode execution */
-typedef bool (*OpcodeHandler)(
-    Jsonv_Context *ctx,
-    ASTNode *pool,
-    const Jsonv_Schema *schema,
-    const uint8_t **pc,
-    int node_idx,
-    const char *path,
-    E *out_err,
-    const uint8_t *constant_pool
-);
+typedef bool (*OpcodeHandler)(VMState *state);
 
 extern const OpcodeHandler opcode_handlers[OP_FORMAT + 1];
 
