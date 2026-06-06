@@ -20,19 +20,19 @@ extern const Except MAXIMUM_VALUES_REACHED;
 extern const Except ARENA_LIMIT_REACHED;
 extern const Except MAXIMUM_TOKEN_BYTES_REACHED;
 
-extern bool validate_ast(
+extern bool validate_bytecode(
     Jsonv_Context *ctx,
     ASTNode *pool,
     const Jsonv_Schema *schema,
-    int rule_idx,
+    uint32_t offset,
     int node_idx,
     const char *path,
     E *out_err
 );
 
 struct Jsonv_Schema {
-  SchemaRule *rules;
-  int rule_count;
+  uint8_t *bytecode;
+  uint32_t length;
 };
 
 struct Jsonv_Context {
@@ -96,17 +96,17 @@ Jsonv_Schema* jsonv_schema_compile(
     parse_to_ast(schema_arena, &lexer, json_length, est.value_count, &ast, &schema_keytree, &schema_set);
 
     // 5. COMPILE SCHEMA
-    int rule_count = 0;
-    SchemaRule *rules = compile_schema(schema_arena, (ASTNode *)ast.data, stack_size(&ast), 0, &rule_count);
-    if (!rules) {
+    int bytecode_length = 0;
+    uint8_t *bytecode = compile_schema(schema_arena, (ASTNode *)ast.data, stack_size(&ast), 0, &bytecode_length);
+    if (!bytecode) {
       return NULL;
     }
 
     // 6. ALLOCATE SCHEMA OBJECT
     Jsonv_Schema *schema = (Jsonv_Schema *)jsonv_arena_alloc(schema_arena, sizeof(Jsonv_Schema));
     if (!schema) return NULL;
-    schema->rules = rules;
-    schema->rule_count = rule_count;
+    schema->bytecode = bytecode;
+    schema->length = (uint32_t)bytecode_length;
     return schema;
   }
   EXCEPT(MALFORMED_JSON) {
@@ -272,7 +272,7 @@ bool jsonv_ctx_validate(
     return false;
   }
 
-  bool ok = validate_ast(ctx, (ASTNode *)ctx->data.data, schema, 0, 0, "", &ctx->last_error);
+  bool ok = validate_bytecode(ctx, (ASTNode *)ctx->data.data, schema, 0, 0, "", &ctx->last_error);
   if (!ok) {
     ctx->has_error = true;
   }
