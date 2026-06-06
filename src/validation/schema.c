@@ -61,7 +61,7 @@ int map_type_string_to_mask(Token t) {
   if (token_equals(t, "number"))
     return TYPE_NUMBER;
   if (token_equals(t, "integer"))
-    return TYPE_NUMBER | TYPE_INTEGER;
+    return TYPE_INTEGER;
   if (token_equals(t, "boolean"))
     return TYPE_BOOL;
   if (token_equals(t, "object"))

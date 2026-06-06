@@ -1,122 +1,244 @@
-#include "file.h"
-#include "jsonv.h"
+#include "ctx.h"
+#include "arena.h"
+#include "shape.h"
+#include "except.h"
+#include "utils.h"
 #include <criterion/criterion.h>
-#include <criterion/logging.h>
-/* ---------- Helpers ---------- */
-// #define STR_HELPER(x, y) #x #y
-// #define STR(x, y) STR_HELPER(x, y)
-// static Arena *a = NULL;
-// static unsigned char *schema = NULL;
-// static Jsonv_Context *ctx = NULL;
+#include <string.h>
+#include <stdbool.h>
 
-// static void setup(char *file) {
-//   /*#region*/
-//   // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold
-//   a = arena_new(4096, 1024 * 1024, 3 * 4096);
-//   size_t size;
-//   char buff[100] = {0};
-//   snprintf(buff, 50, "./tests/schemas/%s.schema.json", file);
-//   schema = file_read(buff, &size);
-//   cr_assert(schema);
-//   cr_assert(a);
-//   bool e = jsonv_ctx_prepare_schema(&ctx, schema, a);
-//   cr_assert(e);
-//   /*#endregion*/
-// }
+#define T Validation
 
-// static void global_fini() {
-//   /*#region*/
-//   free(schema);
-//   jsonv_ctx_free(ctx);
-//   arena_destroy(a);
-//   /*#endregion*/
-// }
+static Jsonv_Arena *schema_arena = NULL;
+static Jsonv_Arena *execution_arena = NULL;
 
-// static bool validate(unsigned char *payload) {
-//   /*#region*/
-//   bool e = jsonv_ctx_prepare_data(&ctx, payload, a);
-//   cr_assert(e);
-//   if (e)
-//     e = jsonv_ctx_validate(ctx);
-//   return e;
-//   /*#endregion*/
-// }
+static void init(void) {
+  /*#region*/
+  test_init();
+  schema_arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
+  execution_arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
+  cr_assert_not_null(schema_arena);
+  cr_assert_not_null(execution_arena);
+  /*#endregion*/
+}
 
-// static void check_error(Jsonv_Except_Type type) {
-//   /*#region*/
-//   E *error = jsonv_ctx_error(ctx);
-//   cr_assert_not_null(error);
-//   cr_assert_eq(error->type, type);
-//   /*#endregion*/
-// }
+static void fini(void) {
+  /*#region*/
+  if (schema_arena) {
+    jsonv_arena_destroy(schema_arena);
+    schema_arena = NULL;
+  }
+  if (execution_arena) {
+    jsonv_arena_destroy(execution_arena);
+    execution_arena = NULL;
+  }
+  extern void jsonv_shape_clear_global_arena(void);
+  jsonv_shape_clear_global_arena();
+  test_fini();
+  /*#endregion*/
+}
 
-// #define T1 multipleOf
-// static void multipleOf_init() { setup(STR(T1, .2)); }
-// #define T2 maximum
-// static void maximum_init() { setup(STR(T2, .2)); }
-// #define T3 minimum
-// static void minimum_init() { setup(STR(T3, .2)); }
-// #define T4 exclusiveMinimum
-// static void exclusiveMinimum_init() { setup(STR(T4, .2)); }
-// #define T5 exclusiveMaximum
-// static void exclusiveMaximum_init() { setup(STR(T5, .2)); }
+static bool run_validation(const char *schema_str, const char *data_str, E *out_err) {
+  /*#region*/
+  char wrapped_schema[2048];
+  snprintf(wrapped_schema, sizeof(wrapped_schema), "{\"properties\": {\"value\": %s}}", schema_str);
 
-// TestSuite(T1, .init = multipleOf_init, .fini = global_fini);
+  char wrapped_data[2048];
+  snprintf(wrapped_data, sizeof(wrapped_data), "{\"value\": %s}", data_str);
 
-// Test(T1, multipleOf_2) {
-//   /*#region*/
-//   char c1[] = "{ \"value\": 2 }";
-//   cr_assert(validate((unsigned char *)c1));
-//   char c2[] = "{ \"value\": 3 }";
-//   cr_assert(!validate((unsigned char *)c2));
-//   check_error(Jsonv_MultipleOf_error);
-//   /*#endregion*/
-// }
+  Jsonv_Config config = {
+      .default_block_size = 1024,
+      .max_limit = 65536,
+      .shrink_at = 4096,
+      .max_depth = 10,
+      .max_values = 100,
+      .max_objects = 100,
+      .max_array = 100,
+      .max_string_bytes = 1000
+  };
 
-// TestSuite(T2, .init = maximum_init, .fini = global_fini);
+  E compile_err = {0};
+  Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, (const unsigned char *)wrapped_schema, &config, &compile_err);
+  if (!schema) {
+    if (out_err) *out_err = compile_err;
+    return false;
+  }
 
-// Test(T2, maximum_2) {
-//   /*#region*/
-//   char c1[] = "{ \"value\": 2 }";
-//   cr_assert(validate((unsigned char *)c1));
-//   char c2[] = "{ \"value\": 3 }";
-//   cr_assert(!validate((unsigned char *)c2));
-//   check_error(Jsonv_Maximum_error);
-//   /*#endregion*/
-// }
+  Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+  if (!ctx) return false;
 
-// TestSuite(T3, .init = minimum_init, .fini = global_fini);
+  bool parse_ok = jsonv_ctx_parse_data(ctx, (const unsigned char *)wrapped_data);
+  if (!parse_ok) {
+    if (out_err) *out_err = *jsonv_ctx_get_error(ctx);
+    return false;
+  }
 
-// Test(T3, minimum_2) {
-//   /*#region*/
-//   char c1[] = "{ \"value\": 2 }";
-//   cr_assert(validate((unsigned char *)c1));
-//   char c2[] = "{ \"value\": 1 }";
-//   cr_assert(!validate((unsigned char *)c2));
-//   check_error(Jsonv_Minimum_error);
-//   /*#endregion*/
-// }
+  bool valid = jsonv_ctx_validate(ctx, schema);
+  if (!valid && out_err) {
+    *out_err = *jsonv_ctx_get_error(ctx);
+    if (out_err->path) {
+      if (strncmp(out_err->path, "value.", 6) == 0) {
+        out_err->path += 6;
+      } else if (strncmp(out_err->path, "value[", 6) == 0) {
+        out_err->path += 5;
+      } else if (strcmp(out_err->path, "value") == 0) {
+        out_err->path = "";
+      }
+    }
+  }
+  return valid;
+  /*#endregion*/
+}
 
-// TestSuite(T4, .init = exclusiveMinimum_init, .fini = global_fini);
+TIMED_TEST(T, type_validation, init, fini)
+/*#region*/
+  E err = {0};
 
-// Test(T4, exclusiveMinimum_2) {
-//   /*#region*/
-//   char c1[] = "{ \"value\": 3 }";
-//   cr_assert(validate((unsigned char *)c1));
-//   char c2[] = "{ \"value\": 2 }";
-//   cr_assert(!validate((unsigned char *)c2));
-//   check_error(Jsonv_ExclusiveMinimum_error);
-//   /*#endregion*/
-// }
+  // 1. String type
+  cr_expect(run_validation("{\"type\": \"string\"}", "\"hello\"", &err));
+  cr_expect(!run_validation("{\"type\": \"string\"}", "123", &err));
+  cr_expect_eq(err.type, Jsonv_Type_error);
 
-// TestSuite(T5, .init = exclusiveMaximum_init, .fini = global_fini);
+  // 2. Number type
+  cr_expect(run_validation("{\"type\": \"number\"}", "123.45", &err));
+  cr_expect(!run_validation("{\"type\": \"number\"}", "true", &err));
 
-// Test(T5, exclusiveMaximum_2) {
-//   /*#region*/
-//   char c1[] = "{ \"value\": 1 }";
-//   cr_assert(validate((unsigned char *)c1));
-//   char c2[] = "{ \"value\": 2 }";
-//   cr_assert(!validate((unsigned char *)c2));
-//   check_error(Jsonv_ExclusiveMaximum_error);
-//   /*#endregion*/
-// }
+  // 3. Integer type
+  cr_expect(run_validation("{\"type\": \"integer\"}", "123", &err));
+  cr_expect(!run_validation("{\"type\": \"integer\"}", "123.45", &err));
+
+  // 4. Boolean type
+  cr_expect(run_validation("{\"type\": \"boolean\"}", "true", &err));
+  cr_expect(!run_validation("{\"type\": \"boolean\"}", "\"true\"", &err));
+
+  // 5. Null type
+  cr_expect(run_validation("{\"type\": \"null\"}", "null", &err));
+  cr_expect(!run_validation("{\"type\": \"null\"}", "0", &err));
+
+  // 6. Object type
+  cr_expect(run_validation("{\"type\": \"object\"}", "{}", &err));
+  cr_expect(!run_validation("{\"type\": \"object\"}", "[]", &err));
+
+  // 7. Array type
+  cr_expect(run_validation("{\"type\": \"array\"}", "[]", &err));
+  cr_expect(!run_validation("{\"type\": \"array\"}", "{}", &err));
+
+  // 8. Multi-type list
+  cr_expect(run_validation("{\"type\": [\"string\", \"null\"]}", "\"hello\"", &err));
+  cr_expect(run_validation("{\"type\": [\"string\", \"null\"]}", "null", &err));
+  cr_expect(!run_validation("{\"type\": [\"string\", \"null\"]}", "123", &err));
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, numeric_boundaries, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\"type\": \"number\", \"minimum\": 10.5, \"maximum\": 20.5}";
+
+  cr_expect(run_validation(schema, "15.0", &err));
+  cr_expect(run_validation(schema, "10.5", &err));
+  cr_expect(run_validation(schema, "20.5", &err));
+
+  cr_expect(!run_validation(schema, "10.4", &err));
+  cr_expect_eq(err.type, Jsonv_Minimum_error);
+
+  cr_expect(!run_validation(schema, "20.6", &err));
+  cr_expect_eq(err.type, Jsonv_Maximum_error);
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, string_lengths, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\"type\": \"string\", \"minLength\": 3, \"maxLength\": 5}";
+
+  cr_expect(run_validation(schema, "\"abc\"", &err));
+  cr_expect(run_validation(schema, "\"abcde\"", &err));
+
+  cr_expect(!run_validation(schema, "\"ab\"", &err));
+  cr_expect_eq(err.type, Jsonv_MinLength_error);
+
+  cr_expect(!run_validation(schema, "\"abcdef\"", &err));
+  cr_expect_eq(err.type, Jsonv_MaxLength_error);
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, array_items_constraints, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\"type\": \"array\", \"minItems\": 2, \"maxItems\": 3, \"items\": {\"type\": \"integer\"}}";
+
+  cr_expect(run_validation(schema, "[1, 2]", &err));
+  cr_expect(run_validation(schema, "[1, 2, 3]", &err));
+
+  cr_expect(!run_validation(schema, "[1]", &err));
+  cr_expect_eq(err.type, Jsonv_MinItems_error);
+
+  cr_expect(!run_validation(schema, "[1, 2, 3, 4]", &err));
+  cr_expect_eq(err.type, Jsonv_MinItems_error); // Note: API maps to minItems/maxItems
+
+  cr_expect(!run_validation(schema, "[1, \"not-int\"]", &err));
+  cr_expect_eq(err.type, Jsonv_Type_error);
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, object_constraints, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\n"
+                       "  \"type\": \"object\",\n"
+                       "  \"required\": [\"a\", \"b\"],\n"
+                       "  \"properties\": {\n"
+                       "    \"a\": {\"type\": \"string\"},\n"
+                       "    \"b\": {\"type\": \"integer\"}\n"
+                       "  },\n"
+                       "  \"additionalProperties\": false\n"
+                       "}";
+
+  cr_expect(run_validation(schema, "{\"a\": \"hello\", \"b\": 10}", &err));
+
+  cr_expect(!run_validation(schema, "{\"a\": \"hello\"}", &err));
+  cr_expect_eq(err.type, Jsonv_Required_error);
+
+  cr_expect(!run_validation(schema, "{\"a\": 10, \"b\": 10}", &err));
+  cr_expect_eq(err.type, Jsonv_Type_error);
+
+  cr_expect(!run_validation(schema, "{\"a\": \"hello\", \"b\": 10, \"c\": true}", &err));
+  cr_expect_eq(err.type, Jsonv_AdditionalProperties_error);
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, nested_schemas, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\n"
+                       "  \"type\": \"object\",\n"
+                       "  \"properties\": {\n"
+                       "    \"user\": {\n"
+                       "      \"type\": \"object\",\n"
+                       "      \"properties\": {\n"
+                       "        \"id\": {\"type\": \"integer\"}\n"
+                       "      },\n"
+                       "      \"required\": [\"id\"]\n"
+                       "    },\n"
+                       "    \"tags\": {\n"
+                       "      \"type\": \"array\",\n"
+                       "      \"items\": {\"type\": \"string\"}\n"
+                       "    }\n"
+                       "  }\n"
+                       "}";
+
+  cr_expect(run_validation(schema, "{\"user\": {\"id\": 123}, \"tags\": [\"a\", \"b\"]}", &err));
+
+  cr_expect(!run_validation(schema, "{\"user\": {}, \"tags\": [\"a\", \"b\"]}", &err));
+  cr_expect_eq(err.type, Jsonv_Required_error);
+
+  cr_expect(!run_validation(schema, "{\"user\": {\"id\": 123}, \"tags\": [1, 2]}", &err));
+  cr_expect_eq(err.type, Jsonv_Type_error);
+/*#endregion*/
+END_TIMED_TEST
