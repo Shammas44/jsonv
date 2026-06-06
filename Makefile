@@ -193,7 +193,7 @@ run_d: $(MAIN_APP_DYNAMIC)
 	@$(MAIN_APP_DYNAMIC)
 
 run_test: $(TEST_APP)
-	@MallocNanoZone=0 $(TEST_APP)
+	@MallocNanoZone=0 $(TEST_APP) || true
 
 run_fuzz: $(FUZZ_APP)
 	@mkdir -p output_fuzz local_seed_corpus

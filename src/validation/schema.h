@@ -14,6 +14,13 @@ typedef enum {
   TYPE_INTEGER = 1 << 6
 } SchemaTypeMask;
 
+typedef struct {
+  uint32_t magic;         // 0x4A535642 ("JSVB")
+  uint32_t version;       // 1
+  uint32_t code_size;     // Size of Code Section in bytes
+  uint32_t data_size;     // Size of Constant Pool Section in bytes
+} BytecodeHeader;
+
 typedef enum {
   OP_END = 0,
   OP_FAIL,

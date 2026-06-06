@@ -14,7 +14,8 @@ struct Jsonv_Schema {
 };
 
 typedef struct {
-  Token key;
+  const char *key_start;
+  uint32_t key_len;
   uint32_t rule_offset;
 } DecodedPropertyRule;
 
@@ -54,43 +55,10 @@ static inline double read_double(const uint8_t **pc) {
   /*#endregion*/
 }
 
-static inline Token read_token(const uint8_t **pc) {
-  /*#region*/
-  Token val;
-  memcpy(&val, *pc, sizeof(val));
-  *pc += sizeof(val);
-  return val;
-  /*#endregion*/
-}
 /*#endregion*/
 
-/* Helper: Compares raw key view from AST against Schema rule Token */
-static bool key_matches_token_ast(const char *k_start, size_t k_len, Token t) {
+static bool regex_matches_key(const char *k_start, size_t k_len, const char *pat_start, size_t pat_len, Jsonv_Context *ctx, const char *path, E *out_err) {
   /*#region*/
-  if (t.type != T_STRING) return false;
-  
-  const char *t_start = (const char *)t.value.string.start;
-  size_t t_len = t.value.string.length;
-  
-  // Strip quotes if they exist in schema representation
-  if (t_len >= 2 && t_start[0] == '"' && t_start[t_len - 1] == '"') {
-    t_start++;
-    t_len -= 2;
-  }
-  
-  if (k_len != t_len) return false;
-  return memcmp(k_start, t_start, t_len) == 0;
-  /*#endregion*/
-}
-
-static bool regex_matches_key(const char *k_start, size_t k_len, Token pat_token, Jsonv_Context *ctx, const char *path, E *out_err) {
-  /*#region*/
-  const char *pat_start = (const char *)pat_token.value.string.start;
-  size_t pat_len = pat_token.value.string.length;
-  if (pat_len >= 2 && pat_start[0] == '"' && pat_start[pat_len - 1] == '"') {
-    pat_start++;
-    pat_len -= 2;
-  }
   char *pattern_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), pat_len + 1);
   if (!pattern_str) return false;
   memcpy(pattern_str, pat_start, pat_len);
@@ -396,7 +364,23 @@ bool validate_bytecode(
 ) {
   /*#region*/
   if (offset >= schema->length) return true;
-  
+
+  BytecodeHeader header;
+  if (schema->length < sizeof(BytecodeHeader)) {
+    out_err->type = Jsonv_Malformed_json;
+    snprintf(out_err->description, sizeof(out_err->description), "Invalid bytecode: length too small");
+    return false;
+  }
+  memcpy(&header, schema->bytecode, sizeof(BytecodeHeader));
+  if (offset == sizeof(BytecodeHeader)) {
+    if (header.magic != 0x4A535642 || header.version != 1) {
+      out_err->type = Jsonv_Malformed_json;
+      snprintf(out_err->description, sizeof(out_err->description), "Invalid bytecode: magic/version mismatch");
+      return false;
+    }
+  }
+
+  const uint8_t *constant_pool = schema->bytecode + sizeof(BytecodeHeader) + header.code_size;
   const uint8_t *pc = schema->bytecode + offset;
   ASTNode *node = &pool[node_idx];
 
@@ -527,7 +511,11 @@ bool validate_bytecode(
       }
 
       case OP_PATTERN: {
-        Token pat_token = read_token(&pc);
+        /*#region*/
+        uint32_t pat_offset = read_uint32(&pc);
+        uint32_t pat_len = read_uint32(&pc);
+        const char *pat_start = (const char *)(constant_pool + pat_offset);
+
         if (node->type == AST_LEAF && node->token.type == T_STRING) {
           const char *val_start = (const char *)node->token.value.string.start;
           size_t val_len = node->token.value.string.length;
@@ -541,12 +529,6 @@ bool validate_bytecode(
           memcpy(target_str, val_start, val_len);
           target_str[val_len] = '\0';
 
-          const char *pat_start = (const char *)pat_token.value.string.start;
-          size_t pat_len = pat_token.value.string.length;
-          if (pat_len >= 2 && pat_start[0] == '"' && pat_start[pat_len - 1] == '"') {
-            pat_start++;
-            pat_len -= 2;
-          }
           char *pattern_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), pat_len + 1);
           if (!pattern_str) return false;
           memcpy(pattern_str, pat_start, pat_len);
@@ -571,6 +553,7 @@ bool validate_bytecode(
           }
         }
         break;
+        /*#endregion*/
       }
 
       case OP_MIN_LENGTH: {
@@ -706,35 +689,33 @@ bool validate_bytecode(
       }
 
       case OP_REQUIRED: {
+        /*#region*/
         uint32_t count = read_uint32(&pc);
         if (node->type == AST_OBJECT) {
           for (uint32_t i = 0; i < count; i++) {
-            Token t = read_token(&pc);
-            const char *t_start = (const char *)t.value.string.start;
-            size_t t_len = t.value.string.length;
-            if (t_len >= 2 && t_start[0] == '"' && t_start[t_len - 1] == '"') {
-              t_start++;
-              t_len -= 2;
-            }
+            uint32_t req_offset = read_uint32(&pc);
+            uint32_t req_len = read_uint32(&pc);
+            const char *req_start = (const char *)(constant_pool + req_offset);
             
             // Make a temporary null-terminated string to look up
-            char *req_key = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), t_len + 1);
+            char *req_key = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), req_len + 1);
             if (!req_key) return false;
-            memcpy(req_key, t_start, t_len);
-            req_key[t_len] = '\0';
+            memcpy(req_key, req_start, req_len);
+            req_key[req_len] = '\0';
             
             int val_idx = find_property(pool, node_idx, req_key);
             if (val_idx == -1) {
               out_err->type = Jsonv_Required_error;
               out_err->path = path;
-              snprintf(out_err->description, sizeof(out_err->description), "Missing required field '%.*s'.", (int)t_len, t_start);
+              snprintf(out_err->description, sizeof(out_err->description), "Missing required field '%.*s'.", (int)req_len, req_start);
               return false;
             }
           }
         } else {
-          pc += count * sizeof(Token);
+          pc += count * (sizeof(uint32_t) + sizeof(uint32_t));
         }
         break;
+        /*#endregion*/
       }
 
       case OP_PROPERTIES: {
@@ -753,7 +734,9 @@ bool validate_bytecode(
         }
 
         for (uint32_t k = 0; k < prop_count; k++) {
-          props[k].key = read_token(&pc);
+          uint32_t key_offset = read_uint32(&pc);
+          props[k].key_len = read_uint32(&pc);
+          props[k].key_start = (const char *)(constant_pool + key_offset);
           props[k].rule_offset = read_uint32(&pc);
         }
 
@@ -767,7 +750,9 @@ bool validate_bytecode(
         }
 
         for (uint32_t k = 0; k < pattern_prop_count; k++) {
-          pattern_props[k].key = read_token(&pc);
+          uint32_t key_offset = read_uint32(&pc);
+          pattern_props[k].key_len = read_uint32(&pc);
+          pattern_props[k].key_start = (const char *)(constant_pool + key_offset);
           pattern_props[k].rule_offset = read_uint32(&pc);
         }
 
@@ -781,6 +766,10 @@ bool validate_bytecode(
               // Extract key string view
               const char *k_start = (const char *)k.value.string.start;
               size_t k_len = k.value.string.length;
+              if (k_len >= 2 && k_start[0] == '"' && k_start[k_len - 1] == '"') {
+                k_start++;
+                k_len -= 2;
+              }
 
               // Construct new path for validation errors
               size_t p_len = strlen(path);
@@ -798,7 +787,7 @@ bool validate_bytecode(
 
               // Match against properties
               for (uint32_t p = 0; p < prop_count; p++) {
-                if (key_matches_token_ast(k_start, k_len, props[p].key)) {
+                if (k_len == props[p].key_len && memcmp(k_start, props[p].key_start, k_len) == 0) {
                   matched = true;
                   if (val_idx != -1) {
                     if (!validate_bytecode(ctx, pool, schema, props[p].rule_offset, val_idx, new_path ? new_path : path, out_err)) {
@@ -813,7 +802,7 @@ bool validate_bytecode(
               bool compile_failed = false;
               for (uint32_t p = 0; p < pattern_prop_count; p++) {
                 E temp_err = {0};
-                if (regex_matches_key(k_start, k_len, pattern_props[p].key, ctx, path, &temp_err)) {
+                if (regex_matches_key(k_start, k_len, pattern_props[p].key_start, pattern_props[p].key_len, ctx, path, &temp_err)) {
                   matched = true;
                   if (val_idx != -1) {
                     if (!validate_bytecode(ctx, pool, schema, pattern_props[p].rule_offset, val_idx, new_path ? new_path : path, out_err)) {
@@ -864,6 +853,10 @@ bool validate_bytecode(
               Token k = pool[curr].token;
               const char *k_start = (const char *)k.value.string.start;
               size_t k_len = k.value.string.length;
+              if (k_len >= 2 && k_start[0] == '"' && k_start[k_len - 1] == '"') {
+                k_start++;
+                k_len -= 2;
+              }
 
               // Construct new path
               size_t p_len = strlen(path);
@@ -892,20 +885,16 @@ bool validate_bytecode(
 
       case OP_FORMAT: {
         /*#region*/
-        Token format_token = read_token(&pc);
+        uint32_t fmt_offset = read_uint32(&pc);
+        uint32_t fmt_len = read_uint32(&pc);
+        const char *fmt_start = (const char *)(constant_pool + fmt_offset);
+
         if (node->type == AST_LEAF && node->token.type == T_STRING) {
           const char *val_start = (const char *)node->token.value.string.start;
           size_t val_len = node->token.value.string.length;
           if (val_len >= 2 && val_start[0] == '"' && val_start[val_len - 1] == '"') {
             val_start++;
             val_len -= 2;
-          }
-
-          const char *fmt_start = (const char *)format_token.value.string.start;
-          size_t fmt_len = format_token.value.string.length;
-          if (fmt_len >= 2 && fmt_start[0] == '"' && fmt_start[fmt_len - 1] == '"') {
-            fmt_start++;
-            fmt_len -= 2;
           }
 
           bool valid = true;

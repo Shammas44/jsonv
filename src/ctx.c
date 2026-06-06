@@ -272,7 +272,7 @@ bool jsonv_ctx_validate(
     return false;
   }
 
-  bool ok = validate_bytecode(ctx, (ASTNode *)ctx->data.data, schema, 0, 0, "", &ctx->last_error);
+  bool ok = validate_bytecode(ctx, (ASTNode *)ctx->data.data, schema, sizeof(BytecodeHeader), 0, "", &ctx->last_error);
   if (!ok) {
     ctx->has_error = true;
   }
