@@ -20,16 +20,16 @@ These keywords constrain the length and content of string instances.
 
 - [x] `maxLength`: Value must have a length **less than or equal to** this value.
 - [x] `minLength`: The string must have a length **greater than or equal to** this value.
-- [ ] `pattern`: The string instance must match the regular expression defined by this value.
+- [x] `pattern`: The string instance must match the regular expression defined by this value.
 - [ ] `format`: Used to convey the semantic meaning or expected format of the string.
 
 ## Array Keywords (for `array`)
 
 These keywords constrain the number of items and the schemas of items within an array instance.
 
-- [ ] `maxItems`: Array must have a number of items <= to this value.
-- [ ] `minItems`: Array must have a number of items >= to this value.
-- [ ] `items` Defines the schema for the items in the array.
+- [x] `maxItems`: Array must have a number of items <= to this value.
+- [x] `minItems`: Array must have a number of items >= to this value.
+- [x] `items` Defines the schema for the items in the array.
 - [ ] `uniqueItems`: If `true`, all items in the array must be unique.
 - [ ] `contains`: Array is valid only if **at least one** of its items validates against schema.
 
@@ -42,7 +42,7 @@ These keywords constrain the properties, size, and structure of object instances
 - [x] `required`: A list of property names that **must be present** in the object instance.
 - [x] `properties`: An object where keys are property names and values are schemas.
 - [ ] `patternProperties`: Similar to `properties`, but keys are regular expressions.
-- [ ] `additionalProperties`:  Defines the schema for any properties **not explicitly listed**.
+- [x] `additionalProperties`:  Defines the schema for any properties **not explicitly listed**.
 - [ ] `propertyNames`: The name of every property in the object must validate against this schema
 
 ## Keyword Dependency Keywords
