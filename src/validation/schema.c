@@ -26,18 +26,13 @@ static inline bool is_ast_false(const ASTNode *n) {
   /*#endregion*/
 }
 
-bool token_equals(Token t, const char *str) {
+static bool token_equals(Token t, const char *str) {
   /*#region*/
   if (t.type != T_STRING)
     return false;
 
   const char *t_start = (const char *)t.value.string.start;
   size_t t_len = t.value.string.length;
-
-  if (t_len >= 2 && t_start[0] == '"' && t_start[t_len - 1] == '"') {
-    t_start++;
-    t_len -= 2;
-  }
 
   size_t str_len = strlen(str);
   if (t_len != str_len)
@@ -47,7 +42,7 @@ bool token_equals(Token t, const char *str) {
   /*#endregion*/
 }
 
-double parse_number(Token t) {
+static double parse_number(Token t) {
   /*#region*/
   if (t.type == T_NUMBER) {
     return t.value.number;
@@ -56,22 +51,42 @@ double parse_number(Token t) {
   /*#endregion*/
 }
 
-int map_type_string_to_mask(Token t) {
+typedef struct {
+  const char *name;
+  int mask;
+} TypeMapping;
+
+static Table *type_table = NULL;
+
+static const TypeMapping type_mappings[] = {
+  {"string", TYPE_STRING},
+  {"number", TYPE_NUMBER},
+  {"integer", TYPE_INTEGER},
+  {"boolean", TYPE_BOOL},
+  {"object", TYPE_OBJECT},
+  {"array", TYPE_ARRAY},
+  {"null", TYPE_NULL}
+};
+
+#define TYPE_MAPPINGS_COUNT (sizeof(type_mappings) / sizeof(type_mappings[0]))
+static const char *type_atoms[TYPE_MAPPINGS_COUNT] = {NULL};
+
+static int map_type_string_to_mask(Token t) {
   /*#region*/
-  if (token_equals(t, "string"))
-    return TYPE_STRING;
-  if (token_equals(t, "number"))
-    return TYPE_NUMBER;
-  if (token_equals(t, "integer"))
-    return TYPE_INTEGER;
-  if (token_equals(t, "boolean"))
-    return TYPE_BOOL;
-  if (token_equals(t, "object"))
-    return TYPE_OBJECT;
-  if (token_equals(t, "array"))
-    return TYPE_ARRAY;
-  if (token_equals(t, "null"))
-    return TYPE_NULL;
+  if (!type_table)
+    return 0;
+
+  if (t.type != T_STRING)
+    return 0;
+
+  const char *t_start = (const char *)t.value.string.start;
+  size_t t_len = t.value.string.length;
+
+  const char *atom_val = atom_new(t_start, (int)t_len);
+  void *val = table_get(type_table, atom_val);
+  if (val) {
+    return (int)(uintptr_t)val;
+  }
   return 0;
   /*#endregion*/
 }
@@ -104,7 +119,6 @@ static inline void emit_double(uint8_t **pc, double val) {
   /*#endregion*/
 }
 
-
 static int object_find_key_val_idx(const ASTNode *nodes, int obj_idx, const char *key_name) {
   /*#region*/
   int key_idx = nodes[obj_idx].first_child;
@@ -126,10 +140,7 @@ static const char *get_stripped_string(Token t, uint32_t *out_len) {
   }
   const char *start = (const char *)t.value.string.start;
   size_t len = t.value.string.length;
-  if (len >= 2 && start[0] == '"' && start[len - 1] == '"') {
-    start++;
-    len -= 2;
-  }
+
   *out_len = (uint32_t)len;
   return start;
   /*#endregion*/
@@ -295,6 +306,12 @@ static void init_keyword_table(void) {
   table_put(keyword_table, kw_atoms[KWID_PROPERTIES], &kw_properties);
   table_put(keyword_table, kw_atoms[KWID_PATTERN_PROPERTIES], &kw_pattern_properties);
   table_put(keyword_table, kw_atoms[KWID_ADDITIONAL_PROPERTIES], &kw_additional_props);
+
+  type_table = table_new(16, NULL, NULL);
+  for (size_t i = 0; i < TYPE_MAPPINGS_COUNT; i++) {
+    type_atoms[i] = atom_string(type_mappings[i].name);
+    table_put(type_table, type_atoms[i], (void *)(uintptr_t)type_mappings[i].mask);
+  }
   /*#endregion*/
 }
 
@@ -352,7 +369,6 @@ static void serialize_visitor(ASTNode *nodes, int sub_idx, void *ctx) {
 
 static void visit_subschemas(ASTNode *nodes, int node_idx, SubschemaVisitor visitor, void *ctx) {
   /*#region*/
-  init_keyword_table();
   int key_idx = nodes[node_idx].first_child;
   while (key_idx != -1) {
     ASTNode *key = &nodes[key_idx];
@@ -432,8 +448,6 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   if (is_ast_true(&nodes[node_idx]) || nodes[node_idx].type != AST_OBJECT) {
     return 1; // OP_END
   }
-
-  init_keyword_table();
 
   int prop_count = 0;
   int pattern_prop_count = 0;
@@ -658,8 +672,6 @@ static void serialize_schema_direct(
   int properties_val_idx = -1;
   bool has_additional_props = false;
   int additional_props_val_idx = -1;
-
-  init_keyword_table();
 
   int key_idx = nodes[node_idx].first_child;
   while (key_idx != -1) {
@@ -1028,6 +1040,8 @@ static void serialize_schema_direct(
 
 uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_length) {
   /*#region*/
+  init_keyword_table();
+
   if (ast_count <= 0) {
     *out_length = 0;
     return NULL;
