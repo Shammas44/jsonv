@@ -116,6 +116,135 @@ static bool regex_matches_key(const char *k_start, size_t k_len, Token pat_token
   /*#endregion*/
 }
 
+static bool validate_ipv4(const char *s, size_t len) {
+  /*#region*/
+  int parts = 0;
+  int current_val = 0;
+  bool part_started = false;
+  for (size_t i = 0; i < len; i++) {
+    char c = s[i];
+    if (c >= '0' && c <= '9') {
+      if (current_val == 0 && part_started) {
+        return false;
+      }
+      current_val = current_val * 10 + (c - '0');
+      if (current_val > 255) return false;
+      part_started = true;
+    } else if (c == '.') {
+      if (!part_started) return false;
+      parts++;
+      current_val = 0;
+      part_started = false;
+    } else {
+      return false;
+    }
+  }
+  return parts == 3 && part_started;
+  /*#endregion*/
+}
+
+static bool validate_email(const char *s, size_t len) {
+  /*#region*/
+  int at_idx = -1;
+  for (size_t i = 0; i < len; i++) {
+    if (s[i] == '@') {
+      if (at_idx != -1) return false;
+      at_idx = (int)i;
+    }
+  }
+  if (at_idx <= 0 || at_idx >= (int)len - 1) return false;
+  bool dot_found = false;
+  for (size_t i = at_idx + 2; i < len - 1; i++) {
+    if (s[i] == '.') {
+      dot_found = true;
+      break;
+    }
+  }
+  return dot_found;
+  /*#endregion*/
+}
+
+static bool validate_uuid(const char *s, size_t len) {
+  /*#region*/
+  if (len != 36) return false;
+  for (size_t i = 0; i < 36; i++) {
+    char c = s[i];
+    if (i == 8 || i == 13 || i == 18 || i == 23) {
+      if (c != '-') return false;
+    } else {
+      if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+        return false;
+      }
+    }
+  }
+  return true;
+  /*#endregion*/
+}
+
+static bool validate_datetime(const char *s, size_t len) {
+  /*#region*/
+  if (len < 20) return false;
+  if (s[4] != '-' || s[7] != '-' || (s[10] != 'T' && s[10] != 't') || s[13] != ':' || s[16] != ':') return false;
+  for (int i = 0; i < 19; i++) {
+    if (i != 4 && i != 7 && i != 10 && i != 13 && i != 16) {
+      if (s[i] < '0' || s[i] > '9') return false;
+    }
+  }
+  int year = (s[0]-'0')*1000 + (s[1]-'0')*100 + (s[2]-'0')*10 + (s[3]-'0');
+  int month = (s[5]-'0')*10 + (s[6]-'0');
+  int day = (s[8]-'0')*10 + (s[9]-'0');
+  int hour = (s[11]-'0')*10 + (s[12]-'0');
+  int minute = (s[14]-'0')*10 + (s[15]-'0');
+  int second = (s[17]-'0')*10 + (s[18]-'0');
+
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  if (hour > 23) return false;
+  if (minute > 59) return false;
+  if (second > 60) return false;
+
+  if (month == 4 || month == 6 || month == 9 || month == 11) {
+    if (day > 30) return false;
+  }
+  if (month == 2) {
+    bool is_leap = (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0));
+    if (is_leap) {
+      if (day > 29) return false;
+    } else {
+      if (day > 28) return false;
+    }
+  }
+
+  if (len > 19) {
+    if (s[19] == '.') {
+      size_t idx = 20;
+      while (idx < len && s[idx] >= '0' && s[idx] <= '9') {
+        idx++;
+      }
+      if (idx == len) return false;
+      if (s[idx] == 'Z' || s[idx] == 'z') {
+        return idx == len - 1;
+      }
+      if (s[idx] == '+' || s[idx] == '-') {
+        if (len - idx != 6) return false;
+        if (s[idx+3] != ':') return false;
+        return (s[idx+1] >= '0' && s[idx+1] <= '9') && (s[idx+2] >= '0' && s[idx+2] <= '9') &&
+               (s[idx+4] >= '0' && s[idx+4] <= '9') && (s[idx+5] >= '0' && s[idx+5] <= '9');
+      }
+      return false;
+    } else if (s[19] == 'Z' || s[19] == 'z') {
+      return len == 20;
+    } else if (s[19] == '+' || s[19] == '-') {
+      if (len != 25) return false;
+      if (s[22] != ':') return false;
+      return (s[20] >= '0' && s[20] <= '9') && (s[21] >= '0' && s[21] <= '9') &&
+             (s[23] >= '0' && s[23] <= '9') && (s[24] >= '0' && s[24] <= '9');
+    }
+    return false;
+  }
+  return true;
+  /*#endregion*/
+}
 
 static bool ast_nodes_equal(const ASTNode *pool, int n1_idx, int n2_idx) {
   /*#region*/
@@ -755,6 +884,46 @@ bool validate_bytecode(
             int val_idx = pool[curr].next_sibling;
             if (val_idx == -1) break;
             curr = pool[val_idx].next_sibling;
+          }
+        }
+        break;
+        /*#endregion*/
+      }
+
+      case OP_FORMAT: {
+        /*#region*/
+        Token format_token = read_token(&pc);
+        if (node->type == AST_LEAF && node->token.type == T_STRING) {
+          const char *val_start = (const char *)node->token.value.string.start;
+          size_t val_len = node->token.value.string.length;
+          if (val_len >= 2 && val_start[0] == '"' && val_start[val_len - 1] == '"') {
+            val_start++;
+            val_len -= 2;
+          }
+
+          const char *fmt_start = (const char *)format_token.value.string.start;
+          size_t fmt_len = format_token.value.string.length;
+          if (fmt_len >= 2 && fmt_start[0] == '"' && fmt_start[fmt_len - 1] == '"') {
+            fmt_start++;
+            fmt_len -= 2;
+          }
+
+          bool valid = true;
+          if (fmt_len == 4 && memcmp(fmt_start, "ipv4", 4) == 0) {
+            valid = validate_ipv4(val_start, val_len);
+          } else if (fmt_len == 5 && memcmp(fmt_start, "email", 5) == 0) {
+            valid = validate_email(val_start, val_len);
+          } else if (fmt_len == 4 && memcmp(fmt_start, "uuid", 4) == 0) {
+            valid = validate_uuid(val_start, val_len);
+          } else if (fmt_len == 9 && memcmp(fmt_start, "date-time", 9) == 0) {
+            valid = validate_datetime(val_start, val_len);
+          }
+
+          if (!valid) {
+            out_err->type = Jsonv_Format_error;
+            out_err->path = path;
+            snprintf(out_err->description, sizeof(out_err->description), "String '%.*s' does not conform to format '%.*s'.", (int)val_len, val_start, (int)fmt_len, fmt_start);
+            return false;
           }
         }
         break;

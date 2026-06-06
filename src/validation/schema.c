@@ -166,6 +166,7 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   bool has_if = false;
   bool has_property_names = false;
   int pattern_prop_count = 0;
+  bool has_format = false;
 
   int key_idx = nodes[node_idx].first_child;
   while (key_idx != -1) {
@@ -200,6 +201,8 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
       if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
         has_property_names = true;
       }
+    } else if (token_equals(key->token, "format")) {
+      has_format = true;
     } else if (token_equals(key->token, "minLength")) {
       has_min_len = true;
     } else if (token_equals(key->token, "maxLength")) {
@@ -331,6 +334,9 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   }
   if (has_property_names) {
     own_size += 1 + sizeof(uint32_t);
+  }
+  if (has_format) {
+    own_size += 1 + sizeof(Token);
   }
   if (required_count > 0) {
     own_size += 1 + sizeof(uint32_t) + required_count * sizeof(Token);
@@ -513,6 +519,8 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
   int property_names_val_idx = -1;
   int pattern_prop_count = 0;
   int pattern_properties_val_idx = -1;
+  bool has_format = false;
+  Token format_token = {0};
   int required_count = 0;
   int required_val_idx = -1;
   int prop_count = 0;
@@ -623,6 +631,9 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
         has_property_names = true;
         property_names_val_idx = key_idx + 1;
       }
+    } else if (token_equals(key->token, "format")) {
+      has_format = true;
+      format_token = val->token;
     } else if (token_equals(key->token, "then")) {
       if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
         then_val_idx = key_idx + 1;
@@ -763,6 +774,10 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
   if (has_property_names && property_names_val_idx != -1) {
     emit_byte(&pc, OP_PROPERTY_NAMES);
     emit_uint32(&pc, offsets[property_names_val_idx]);
+  }
+  if (has_format) {
+    emit_byte(&pc, OP_FORMAT);
+    emit_token(&pc, format_token);
   }
   if (required_count > 0 && required_val_idx != -1) {
     emit_byte(&pc, OP_REQUIRED);

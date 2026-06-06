@@ -21,7 +21,7 @@ These keywords constrain the length and content of string instances.
 - [x] `maxLength`: Value must have a length **less than or equal to** this value.
 - [x] `minLength`: The string must have a length **greater than or equal to** this value.
 - [x] `pattern`: The string instance must match the regular expression defined by this value.
-- [ ] `format`: Used to convey the semantic meaning or expected format of the string.
+- [x] `format`: Used to convey the semantic meaning or expected format of the string.
 
 ## Array Keywords (for `array`)
 

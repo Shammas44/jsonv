@@ -30,6 +30,7 @@ typedef enum {
   Jsonv_AnyOf_error,
   Jsonv_OneOf_error,
   Jsonv_IfThenElse_error,
+  Jsonv_Format_error,
   // else
   Jsonv_ValueNotAllowed_error,
   Jsonv_Malformed_json,

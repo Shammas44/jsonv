@@ -374,4 +374,23 @@ Asserts that all property keys of an object validate against a subschema.
 * **Format**: `[0x19] [4 bytes offset]` (5 bytes)
 * **VM Semantics**: If the current data node is an object, the VM iterates through all properties of the object and validates each property key string against the subschema at `offset`. If any key fails validation, validation aborts. Non-object data nodes ignore this instruction.
 
+---
+
+### 3.Q OP_FORMAT (0x1B)
+Asserts that a string instance conforms to a semantic format constraint.
+```
++--------------------+------------------------------+
+|   OP_FORMAT(0x1B)  |     format_token (Token)     |
++--------------------+------------------------------+
+```
+* **Format**: `[0x1B] [24 bytes format_token]` (25 bytes)
+* **VM Semantics**: If the current data node is a string, the VM parses the expected format name in `format_token` (quotes stripped) and validates the string contents against it.
+  * Supported formats:
+    * `"ipv4"`: 4 decimal octets (0-255) separated by dots, with no leading zeros.
+    * `"email"`: Basic internet mail address checking (exactly one `@` with non-empty local and domain parts, and a dot in the domain).
+    * `"uuid"`: 36 characters with standard `8-4-4-4-12` hex representation.
+    * `"date-time"`: RFC 3339 date and time representation (with mandatory time zone offset or `Z`, correct month/day range, and leap year checks).
+  * If validation fails, validation aborts with a `Jsonv_Format_error`. Non-string data nodes ignore this instruction.
+
+
 

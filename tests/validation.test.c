@@ -557,3 +557,47 @@ TIMED_TEST(T, pattern_properties_validation, init, fini)
   cr_expect_eq(err.type, Jsonv_AdditionalProperties_error);
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, format_validation, init, fini)
+/*#region*/
+  E err = {0};
+
+  // 1. IPv4 Format
+  const char *schema_ipv4 = "{\"format\": \"ipv4\"}";
+  cr_expect(run_validation(schema_ipv4, "\"192.168.1.1\"", &err));
+  cr_expect(run_validation(schema_ipv4, "\"0.0.0.0\"", &err));
+  cr_expect(!run_validation(schema_ipv4, "\"256.0.0.1\"", &err));
+  cr_expect_eq(err.type, Jsonv_Format_error);
+  cr_expect(!run_validation(schema_ipv4, "\"192.168.01.1\"", &err));
+  cr_expect_eq(err.type, Jsonv_Format_error);
+  cr_expect(!run_validation(schema_ipv4, "\"not-an-ip\"", &err));
+  cr_expect_eq(err.type, Jsonv_Format_error);
+
+  // 2. Email Format
+  const char *schema_email = "{\"format\": \"email\"}";
+  cr_expect(run_validation(schema_email, "\"user@example.com\"", &err));
+  cr_expect(!run_validation(schema_email, "\"userexample.com\"", &err));
+  cr_expect_eq(err.type, Jsonv_Format_error);
+  cr_expect(!run_validation(schema_email, "\"user@com\"", &err));
+  cr_expect_eq(err.type, Jsonv_Format_error);
+
+  // 3. UUID Format
+  const char *schema_uuid = "{\"format\": \"uuid\"}";
+  cr_expect(run_validation(schema_uuid, "\"123e4567-e89b-12d3-a456-426614174000\"", &err));
+  cr_expect(!run_validation(schema_uuid, "\"123e4567-e89b-12d3-a456-42661417400\"", &err)); // too short
+  cr_expect_eq(err.type, Jsonv_Format_error);
+  cr_expect(!run_validation(schema_uuid, "\"123e4567-e89b-12d3-a456-42661417400g\"", &err)); // non-hex
+  cr_expect_eq(err.type, Jsonv_Format_error);
+
+  // 4. Date-Time Format
+  const char *schema_dt = "{\"format\": \"date-time\"}";
+  cr_expect(run_validation(schema_dt, "\"1985-04-12T23:20:50.52Z\"", &err));
+  cr_expect(run_validation(schema_dt, "\"1996-12-19T16:39:57-08:00\"", &err));
+  cr_expect(run_validation(schema_dt, "\"2026-06-06T15:19:57+02:00\"", &err));
+  cr_expect(!run_validation(schema_dt, "\"1985-04-12T23:20:50\"", &err)); // missing offset
+  cr_expect_eq(err.type, Jsonv_Format_error);
+  cr_expect(!run_validation(schema_dt, "\"2026-02-29T12:00:00Z\"", &err)); // invalid day for non-leap year
+  cr_expect_eq(err.type, Jsonv_Format_error);
+/*#endregion*/
+END_TIMED_TEST
+

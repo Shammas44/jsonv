@@ -40,7 +40,8 @@ typedef enum {
   OP_ANY_OF,
   OP_ONE_OF,
   OP_IF_THEN_ELSE,
-  OP_PROPERTY_NAMES
+  OP_PROPERTY_NAMES,
+  OP_FORMAT
 } Opcode;
 
 uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_length);
