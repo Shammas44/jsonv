@@ -6,15 +6,7 @@
 
 // --- SCHEMA COMPILER STRUCTURES ---
 
-typedef enum {
-  TYPE_NULL = 1 << 0,
-  TYPE_BOOL = 1 << 1,
-  TYPE_NUMBER = 1 << 2,
-  TYPE_STRING = 1 << 3,
-  TYPE_ARRAY = 1 << 4,
-  TYPE_OBJECT = 1 << 5,
-  TYPE_INTEGER = 1 << 6
-} SchemaTypeMask;
+
 
 typedef struct {
   Token key;
