@@ -409,6 +409,36 @@ TIMED_TEST(T, all_of_validation, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, any_of_validation, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\n"
+                       "  \"anyOf\": [\n"
+                       "    {\"type\": \"string\"},\n"
+                       "    {\"type\": \"integer\", \"minimum\": 10}\n"
+                       "  ]\n"
+                       "}";
+
+  // Strings (validates against the first subschema)
+  cr_expect(run_validation(schema, "\"hello\"", &err));
+  cr_expect(run_validation(schema, "\"abc\"", &err));
+
+  // Integers >= 10 (validates against the second subschema)
+  cr_expect(run_validation(schema, "10", &err));
+  cr_expect(run_validation(schema, "15", &err));
+
+  // Integers < 10 (fails both subschemas)
+  cr_expect(!run_validation(schema, "5", &err));
+  cr_expect_eq(err.type, Jsonv_AnyOf_error);
+
+  // Booleans (fails both subschemas)
+  cr_expect(!run_validation(schema, "true", &err));
+  cr_expect_eq(err.type, Jsonv_AnyOf_error);
+/*#endregion*/
+END_TIMED_TEST
+
+
 
 
 

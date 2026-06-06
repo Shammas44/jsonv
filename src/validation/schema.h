@@ -36,7 +36,8 @@ typedef enum {
   OP_UNIQUE_ITEMS,
   OP_CONTAINS,
   OP_NOT,
-  OP_ALL_OF
+  OP_ALL_OF,
+  OP_ANY_OF
 } Opcode;
 
 uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_length);

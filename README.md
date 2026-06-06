@@ -59,7 +59,7 @@ These keywords define how subschemas are applied to the data instance.
 - [x] `type`: Defines the expected **data type**.
 - [x] `not`: data must **NOT** be valid against the subschema defined here.
 - [x] `allOf`: data must be valid against **ALL** of the subschemas listed in the array.
-- [ ] `anyOf`: data must be valid against **ANY** of the subschemas listed in the array.
+- [x] `anyOf`: data must be valid against **ANY** of the subschemas listed in the array.
 - [ ] `oneOf`: data must be valid against **EXACTLY ONE** of the subschemas listed in the array.
 - [ ] `if`, `then`, `else`: Conditional application of schemas.
 
