@@ -1,4 +1,6 @@
 #include "schema.h"
+#include "atom.h"
+#include "table.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -149,6 +151,276 @@ static inline void emit_string_ref(uint8_t **pc, uint8_t *bytecode, uint32_t con
 
 // --- DIRECT COMPILER PASS 1: SIZE CALCULATION ---
 
+typedef enum {
+  KW_NONE = 0,
+  KW_SIMPLE,
+  KW_RECURSIVE,
+  KW_STRING_REF,
+  KW_ARRAY_OF,
+  KW_IF,
+  KW_THEN,
+  KW_ELSE,
+  KW_REQUIRED,
+  KW_PROPERTIES,
+  KW_PATTERN_PROPS,
+  KW_ADDITIONAL_PROPS
+} KeywordType;
+
+typedef enum {
+  KWID_TYPE = 0,
+  KWID_MINIMUM,
+  KWID_MAXIMUM,
+  KWID_MULTIPLE_OF,
+  KWID_EXCLUSIVE_MINIMUM,
+  KWID_EXCLUSIVE_MAXIMUM,
+  KWID_MIN_PROPERTIES,
+  KWID_MAX_PROPERTIES,
+  KWID_UNIQUE_ITEMS,
+  KWID_MIN_LENGTH,
+  KWID_MAX_LENGTH,
+  KWID_MIN_ITEMS,
+  KWID_MAX_ITEMS,
+  KWID_ITEMS,
+  KWID_CONTAINS,
+  KWID_NOT,
+  KWID_PROPERTY_NAMES,
+  KWID_PATTERN,
+  KWID_FORMAT,
+  KWID_ALL_OF,
+  KWID_ANY_OF,
+  KWID_ONE_OF,
+  KWID_IF,
+  KWID_THEN,
+  KWID_ELSE,
+  KWID_REQUIRED,
+  KWID_PROPERTIES,
+  KWID_PATTERN_PROPERTIES,
+  KWID_ADDITIONAL_PROPERTIES,
+  KWID_COUNT
+} KeywordID;
+
+typedef struct {
+  KeywordType type;
+  uint8_t opcode;
+  uint32_t base_size;
+  KeywordID id;
+} KeywordConfig;
+
+static KeywordConfig kw_type                = { KW_SIMPLE,          OP_TYPE,              1 + sizeof(uint32_t), KWID_TYPE };
+static KeywordConfig kw_minimum             = { KW_SIMPLE,          OP_MINIMUM,           1 + sizeof(double), KWID_MINIMUM };
+static KeywordConfig kw_maximum             = { KW_SIMPLE,          OP_MAXIMUM,           1 + sizeof(double), KWID_MAXIMUM };
+static KeywordConfig kw_multiple_of         = { KW_SIMPLE,          OP_MULTIPLE_OF,       1 + sizeof(double), KWID_MULTIPLE_OF };
+static KeywordConfig kw_exclusive_min       = { KW_SIMPLE,          OP_EXCLUSIVE_MINIMUM, 1 + sizeof(double), KWID_EXCLUSIVE_MINIMUM };
+static KeywordConfig kw_exclusive_max       = { KW_SIMPLE,          OP_EXCLUSIVE_MAXIMUM, 1 + sizeof(double), KWID_EXCLUSIVE_MAXIMUM };
+static KeywordConfig kw_min_props           = { KW_SIMPLE,          OP_MIN_PROPERTIES,    1 + sizeof(int32_t), KWID_MIN_PROPERTIES };
+static KeywordConfig kw_max_props           = { KW_SIMPLE,          OP_MAX_PROPERTIES,    1 + sizeof(int32_t), KWID_MAX_PROPERTIES };
+static KeywordConfig kw_unique_items        = { KW_SIMPLE,          OP_UNIQUE_ITEMS,      1, KWID_UNIQUE_ITEMS };
+static KeywordConfig kw_min_length          = { KW_SIMPLE,          OP_MIN_LENGTH,        1 + sizeof(int32_t), KWID_MIN_LENGTH };
+static KeywordConfig kw_max_length          = { KW_SIMPLE,          OP_MAX_LENGTH,        1 + sizeof(int32_t), KWID_MAX_LENGTH };
+static KeywordConfig kw_min_items           = { KW_SIMPLE,          OP_MIN_ITEMS,         1 + sizeof(int32_t), KWID_MIN_ITEMS };
+static KeywordConfig kw_max_items           = { KW_SIMPLE,          OP_MAX_ITEMS,         1 + sizeof(int32_t), KWID_MAX_ITEMS };
+
+static KeywordConfig kw_items               = { KW_RECURSIVE,       OP_ITEMS,             1 + sizeof(uint32_t), KWID_ITEMS };
+static KeywordConfig kw_contains            = { KW_RECURSIVE,       OP_CONTAINS,          1 + sizeof(uint32_t), KWID_CONTAINS };
+static KeywordConfig kw_not                 = { KW_RECURSIVE,       OP_NOT,               1 + sizeof(uint32_t), KWID_NOT };
+static KeywordConfig kw_property_names      = { KW_RECURSIVE,       OP_PROPERTY_NAMES,    1 + sizeof(uint32_t), KWID_PROPERTY_NAMES };
+
+static KeywordConfig kw_pattern             = { KW_STRING_REF,      OP_PATTERN,           1 + sizeof(uint32_t) * 2, KWID_PATTERN };
+static KeywordConfig kw_format              = { KW_STRING_REF,      OP_FORMAT,            1 + sizeof(uint32_t) * 2, KWID_FORMAT };
+
+static KeywordConfig kw_all_of              = { KW_ARRAY_OF,        OP_ALL_OF,            1 + sizeof(uint32_t), KWID_ALL_OF };
+static KeywordConfig kw_any_of              = { KW_ARRAY_OF,        OP_ANY_OF,            1 + sizeof(uint32_t), KWID_ANY_OF };
+static KeywordConfig kw_one_of              = { KW_ARRAY_OF,        OP_ONE_OF,            1 + sizeof(uint32_t), KWID_ONE_OF };
+
+static KeywordConfig kw_if                  = { KW_IF,              OP_IF_THEN_ELSE,      1 + sizeof(uint32_t) * 3, KWID_IF };
+static KeywordConfig kw_then                = { KW_THEN,            0,                    0, KWID_THEN };
+static KeywordConfig kw_else                = { KW_ELSE,            0,                    0, KWID_ELSE };
+
+static KeywordConfig kw_required            = { KW_REQUIRED,        OP_REQUIRED,          1 + sizeof(uint32_t), KWID_REQUIRED };
+
+static KeywordConfig kw_properties          = { KW_PROPERTIES,      OP_PROPERTIES,        0, KWID_PROPERTIES };
+static KeywordConfig kw_pattern_properties  = { KW_PATTERN_PROPS,   OP_PROPERTIES,        0, KWID_PATTERN_PROPERTIES };
+static KeywordConfig kw_additional_props    = { KW_ADDITIONAL_PROPS,OP_PROPERTIES,        0, KWID_ADDITIONAL_PROPERTIES };
+
+static Table *keyword_table = NULL;
+static const char *kw_atoms[KWID_COUNT] = {NULL};
+static const char *kw_strings[KWID_COUNT] = {
+  "type", "minimum", "maximum", "multipleOf", "exclusiveMinimum", "exclusiveMaximum",
+  "minProperties", "maxProperties", "uniqueItems", "minLength", "maxLength",
+  "minItems", "maxItems", "items", "contains", "not", "propertyNames",
+  "pattern", "format", "allOf", "anyOf", "oneOf", "if", "then", "else",
+  "required", "properties", "patternProperties", "additionalProperties"
+};
+
+static void init_keyword_table(void) {
+  /*#region*/
+  if (keyword_table) return;
+
+  keyword_table = table_new(32, NULL, NULL);
+  for (int i = 0; i < KWID_COUNT; i++) {
+    kw_atoms[i] = atom_string(kw_strings[i]);
+  }
+
+  table_put(keyword_table, kw_atoms[KWID_TYPE], &kw_type);
+  table_put(keyword_table, kw_atoms[KWID_MINIMUM], &kw_minimum);
+  table_put(keyword_table, kw_atoms[KWID_MAXIMUM], &kw_maximum);
+  table_put(keyword_table, kw_atoms[KWID_MULTIPLE_OF], &kw_multiple_of);
+  table_put(keyword_table, kw_atoms[KWID_EXCLUSIVE_MINIMUM], &kw_exclusive_min);
+  table_put(keyword_table, kw_atoms[KWID_EXCLUSIVE_MAXIMUM], &kw_exclusive_max);
+  table_put(keyword_table, kw_atoms[KWID_MIN_PROPERTIES], &kw_min_props);
+  table_put(keyword_table, kw_atoms[KWID_MAX_PROPERTIES], &kw_max_props);
+  table_put(keyword_table, kw_atoms[KWID_UNIQUE_ITEMS], &kw_unique_items);
+  table_put(keyword_table, kw_atoms[KWID_MIN_LENGTH], &kw_min_length);
+  table_put(keyword_table, kw_atoms[KWID_MAX_LENGTH], &kw_max_length);
+  table_put(keyword_table, kw_atoms[KWID_MIN_ITEMS], &kw_min_items);
+  table_put(keyword_table, kw_atoms[KWID_MAX_ITEMS], &kw_max_items);
+
+  table_put(keyword_table, kw_atoms[KWID_ITEMS], &kw_items);
+  table_put(keyword_table, kw_atoms[KWID_CONTAINS], &kw_contains);
+  table_put(keyword_table, kw_atoms[KWID_NOT], &kw_not);
+  table_put(keyword_table, kw_atoms[KWID_PROPERTY_NAMES], &kw_property_names);
+
+  table_put(keyword_table, kw_atoms[KWID_PATTERN], &kw_pattern);
+  table_put(keyword_table, kw_atoms[KWID_FORMAT], &kw_format);
+
+  table_put(keyword_table, kw_atoms[KWID_ALL_OF], &kw_all_of);
+  table_put(keyword_table, kw_atoms[KWID_ANY_OF], &kw_any_of);
+  table_put(keyword_table, kw_atoms[KWID_ONE_OF], &kw_one_of);
+
+  table_put(keyword_table, kw_atoms[KWID_IF], &kw_if);
+  table_put(keyword_table, kw_atoms[KWID_THEN], &kw_then);
+  table_put(keyword_table, kw_atoms[KWID_ELSE], &kw_else);
+
+  table_put(keyword_table, kw_atoms[KWID_REQUIRED], &kw_required);
+  table_put(keyword_table, kw_atoms[KWID_PROPERTIES], &kw_properties);
+  table_put(keyword_table, kw_atoms[KWID_PATTERN_PROPERTIES], &kw_pattern_properties);
+  table_put(keyword_table, kw_atoms[KWID_ADDITIONAL_PROPERTIES], &kw_additional_props);
+  /*#endregion*/
+}
+
+// --- VISITOR STRUCTURES AND HELPERS ---
+
+typedef struct {
+  uint32_t *offsets;
+  uint32_t current_offset;
+  uint32_t *data_size;
+  uint32_t total_size;
+} SizeVisitorCtx;
+
+typedef struct {
+  const uint32_t *offsets;
+  uint8_t *bytecode;
+  uint32_t *code_write_ptr;
+  uint32_t *data_write_ptr;
+  uint32_t constant_pool_start;
+} SerializeVisitorCtx;
+
+typedef void (*SubschemaVisitor)(ASTNode *nodes, int sub_idx, void *ctx);
+
+static inline bool is_valid_subschema_node(const ASTNode *node) {
+  /*#region*/
+  return node->type == AST_OBJECT || is_ast_true(node) || is_ast_false(node);
+  /*#endregion*/
+}
+
+static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *offsets, uint32_t current_offset, uint32_t *data_size);
+
+static void serialize_schema_direct(
+    ASTNode *nodes,
+    int node_idx,
+    const uint32_t *offsets,
+    uint8_t *bytecode,
+    uint32_t *code_write_ptr,
+    uint32_t *data_write_ptr,
+    uint32_t constant_pool_start
+);
+
+static void size_visitor(ASTNode *nodes, int sub_idx, void *ctx) {
+  /*#region*/
+  SizeVisitorCtx *c = (SizeVisitorCtx *)ctx;
+  uint32_t sub_size = calculate_schema_size(nodes, sub_idx, c->offsets, c->current_offset + c->total_size, c->data_size);
+  c->total_size += sub_size;
+  /*#endregion*/
+}
+
+static void serialize_visitor(ASTNode *nodes, int sub_idx, void *ctx) {
+  /*#region*/
+  SerializeVisitorCtx *c = (SerializeVisitorCtx *)ctx;
+  serialize_schema_direct(nodes, sub_idx, c->offsets, c->bytecode, c->code_write_ptr, c->data_write_ptr, c->constant_pool_start);
+  /*#endregion*/
+}
+
+static void visit_subschemas(ASTNode *nodes, int node_idx, SubschemaVisitor visitor, void *ctx) {
+  /*#region*/
+  init_keyword_table();
+  int key_idx = nodes[node_idx].first_child;
+  while (key_idx != -1) {
+    ASTNode *key = &nodes[key_idx];
+    ASTNode *val = &nodes[key_idx + 1];
+
+    uint32_t len = 0;
+    const char *stripped = get_stripped_string(key->token, &len);
+    if (stripped) {
+      const char *atom_k = atom_new(stripped, (int)len);
+      KeywordConfig *cfg = (KeywordConfig *)table_get(keyword_table, atom_k);
+      if (cfg) {
+        switch (cfg->id) {
+          case KWID_ITEMS:
+          case KWID_CONTAINS:
+          case KWID_NOT:
+          case KWID_PROPERTY_NAMES:
+          case KWID_IF:
+            if (is_valid_subschema_node(val)) {
+              visitor(nodes, key_idx + 1, ctx);
+            }
+            break;
+          case KWID_ALL_OF:
+          case KWID_ANY_OF:
+          case KWID_ONE_OF:
+            if (val->type == AST_ARRAY) {
+              int sub_idx = val->first_child;
+              while (sub_idx != -1) {
+                if (is_valid_subschema_node(&nodes[sub_idx])) {
+                  visitor(nodes, sub_idx, ctx);
+                }
+                sub_idx = nodes[sub_idx].next_sibling;
+              }
+            }
+            break;
+          case KWID_THEN:
+          case KWID_ELSE:
+            if (object_find_key_val_idx(nodes, node_idx, "if") != -1) {
+              if (is_valid_subschema_node(val)) {
+                visitor(nodes, key_idx + 1, ctx);
+              }
+            }
+            break;
+          case KWID_PROPERTIES:
+          case KWID_PATTERN_PROPERTIES:
+            if (val->type == AST_OBJECT) {
+              int p_idx = val->first_child;
+              while (p_idx != -1) {
+                ASTNode *p_val = &nodes[p_idx + 1];
+                visitor(nodes, p_idx + 1, ctx);
+                p_idx = p_val->next_sibling;
+              }
+            }
+            break;
+          case KWID_ADDITIONAL_PROPERTIES:
+            if (val->type == AST_OBJECT || is_ast_true(val)) {
+              visitor(nodes, key_idx + 1, ctx);
+            }
+            break;
+          default:
+            break;
+        }
+      }
+    }
+    key_idx = val->next_sibling;
+  }
+  /*#endregion*/
+}
+
 static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *offsets, uint32_t current_offset, uint32_t *data_size) {
   /*#region*/
   offsets[node_idx] = current_offset;
@@ -161,226 +433,127 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
     return 1; // OP_END
   }
 
-  // Iterate over properties of this schema object
-  bool has_type = false;
-  bool has_min = false;
-  bool has_max = false;
-  bool has_min_len = false;
-  bool has_max_len = false;
-  bool has_min_items = false;
-  bool has_max_items = false;
-  bool has_items = false;
-  bool has_contains = false;
-  bool has_not = false;
-  bool has_all_of = false;
-  int all_of_count = 0;
-  bool has_any_of = false;
-  int any_of_count = 0;
-  bool has_one_of = false;
-  int one_of_count = 0;
-  int required_count = 0;
-  int prop_count = 0;
-  bool has_additional_props = false;
-  bool has_multiple_of = false;
-  bool has_ex_min = false;
-  bool has_ex_max = false;
-  bool has_pattern = false;
-  bool has_min_props = false;
-  bool has_max_props = false;
-  bool has_unique_items = false;
-  bool has_if = false;
-  bool has_property_names = false;
-  int pattern_prop_count = 0;
-  bool has_format = false;
+  init_keyword_table();
 
+  int prop_count = 0;
+  int pattern_prop_count = 0;
+  bool has_additional_props = false;
+
+  // Iterate over properties of this schema object
   int key_idx = nodes[node_idx].first_child;
   while (key_idx != -1) {
     ASTNode *key = &nodes[key_idx];
     ASTNode *val = &nodes[key_idx + 1];
 
-    if (token_equals(key->token, "type")) {
-      has_type = true;
-    } else if (token_equals(key->token, "minimum")) {
-      has_min = true;
-    } else if (token_equals(key->token, "maximum")) {
-      has_max = true;
-    } else if (token_equals(key->token, "multipleOf")) {
-      has_multiple_of = true;
-    } else if (token_equals(key->token, "exclusiveMinimum")) {
-      has_ex_min = true;
-    } else if (token_equals(key->token, "exclusiveMaximum")) {
-      has_ex_max = true;
-    } else if (token_equals(key->token, "pattern")) {
-      has_pattern = true;
-      uint32_t len = 0;
-      get_stripped_string(val->token, &len);
-      *data_size += len;
-    } else if (token_equals(key->token, "minProperties")) {
-      has_min_props = true;
-    } else if (token_equals(key->token, "maxProperties")) {
-      has_max_props = true;
-    } else if (token_equals(key->token, "uniqueItems")) {
-      has_unique_items = is_ast_true(val);
-    } else if (token_equals(key->token, "if")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_if = true;
+    uint32_t len = 0;
+    const char *stripped = get_stripped_string(key->token, &len);
+    if (stripped) {
+      const char *atom_k = atom_new(stripped, (int)len);
+      KeywordConfig *cfg = (KeywordConfig *)table_get(keyword_table, atom_k);
+      if (cfg) {
+        switch (cfg->id) {
+          case KWID_TYPE:
+          case KWID_MINIMUM:
+          case KWID_MAXIMUM:
+          case KWID_MULTIPLE_OF:
+          case KWID_EXCLUSIVE_MINIMUM:
+          case KWID_EXCLUSIVE_MAXIMUM:
+          case KWID_MIN_PROPERTIES:
+          case KWID_MAX_PROPERTIES:
+          case KWID_MIN_LENGTH:
+          case KWID_MAX_LENGTH:
+          case KWID_MIN_ITEMS:
+          case KWID_MAX_ITEMS:
+            own_size += cfg->base_size;
+            break;
+          case KWID_UNIQUE_ITEMS:
+            if (is_ast_true(val)) {
+              own_size += cfg->base_size;
+            }
+            break;
+          case KWID_ITEMS:
+          case KWID_CONTAINS:
+          case KWID_NOT:
+          case KWID_PROPERTY_NAMES:
+          case KWID_IF:
+            if (is_valid_subschema_node(val)) {
+              own_size += cfg->base_size;
+            }
+            break;
+          case KWID_PATTERN:
+          case KWID_FORMAT: {
+            own_size += cfg->base_size;
+            uint32_t str_len = 0;
+            get_stripped_string(val->token, &str_len);
+            *data_size += str_len;
+            break;
+          }
+          case KWID_ALL_OF:
+          case KWID_ANY_OF:
+          case KWID_ONE_OF: {
+            if (val->type == AST_ARRAY) {
+              int sub_count = 0;
+              int sub_idx = val->first_child;
+              while (sub_idx != -1) {
+                sub_count++;
+                sub_idx = nodes[sub_idx].next_sibling;
+              }
+              own_size += cfg->base_size + sub_count * sizeof(uint32_t);
+            }
+            break;
+          }
+          case KWID_REQUIRED: {
+            if (val->type == AST_ARRAY) {
+              int req_count = 0;
+              int r_idx = val->first_child;
+              while (r_idx != -1) {
+                req_count++;
+                uint32_t str_len = 0;
+                get_stripped_string(nodes[r_idx].token, &str_len);
+                *data_size += str_len;
+                r_idx = nodes[r_idx].next_sibling;
+              }
+              own_size += cfg->base_size + req_count * (sizeof(uint32_t) + sizeof(uint32_t));
+            }
+            break;
+          }
+          case KWID_PROPERTIES: {
+            if (val->type == AST_OBJECT) {
+              int p_idx = val->first_child;
+              while (p_idx != -1) {
+                prop_count++;
+                uint32_t str_len = 0;
+                get_stripped_string(nodes[p_idx].token, &str_len);
+                *data_size += str_len;
+                p_idx = nodes[p_idx + 1].next_sibling;
+              }
+            }
+            break;
+          }
+          case KWID_PATTERN_PROPERTIES: {
+            if (val->type == AST_OBJECT) {
+              int p_idx = val->first_child;
+              while (p_idx != -1) {
+                pattern_prop_count++;
+                uint32_t str_len = 0;
+                get_stripped_string(nodes[p_idx].token, &str_len);
+                *data_size += str_len;
+                p_idx = nodes[p_idx + 1].next_sibling;
+              }
+            }
+            break;
+          }
+          case KWID_ADDITIONAL_PROPERTIES:
+            has_additional_props = true;
+            break;
+          default:
+            break;
+        }
       }
-    } else if (token_equals(key->token, "propertyNames")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_property_names = true;
-      }
-    } else if (token_equals(key->token, "format")) {
-      has_format = true;
-      uint32_t len = 0;
-      get_stripped_string(val->token, &len);
-      *data_size += len;
-    } else if (token_equals(key->token, "minLength")) {
-      has_min_len = true;
-    } else if (token_equals(key->token, "maxLength")) {
-      has_max_len = true;
-    } else if (token_equals(key->token, "minItems")) {
-      has_min_items = true;
-    } else if (token_equals(key->token, "maxItems")) {
-      has_max_items = true;
-    } else if (token_equals(key->token, "items")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_items = true;
-      }
-    } else if (token_equals(key->token, "contains")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_contains = true;
-      }
-    } else if (token_equals(key->token, "not")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_not = true;
-      }
-    } else if (token_equals(key->token, "allOf") && val->type == AST_ARRAY) {
-      has_all_of = true;
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        all_of_count++;
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "anyOf") && val->type == AST_ARRAY) {
-      has_any_of = true;
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        any_of_count++;
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "oneOf") && val->type == AST_ARRAY) {
-      has_one_of = true;
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        one_of_count++;
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "required") && val->type == AST_ARRAY) {
-      int r_idx = val->first_child;
-      while (r_idx != -1) {
-        required_count++;
-        uint32_t len = 0;
-        get_stripped_string(nodes[r_idx].token, &len);
-        *data_size += len;
-        r_idx = nodes[r_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "properties") && val->type == AST_OBJECT) {
-      int p_idx = val->first_child;
-      while (p_idx != -1) {
-        prop_count++;
-        uint32_t len = 0;
-        get_stripped_string(nodes[p_idx].token, &len);
-        *data_size += len;
-        p_idx = nodes[p_idx + 1].next_sibling;
-      }
-    } else if (token_equals(key->token, "patternProperties") && val->type == AST_OBJECT) {
-      int p_idx = val->first_child;
-      while (p_idx != -1) {
-        pattern_prop_count++;
-        uint32_t len = 0;
-        get_stripped_string(nodes[p_idx].token, &len);
-        *data_size += len;
-        p_idx = nodes[p_idx + 1].next_sibling;
-      }
-    } else if (token_equals(key->token, "additionalProperties")) {
-      has_additional_props = true;
     }
-
     key_idx = val->next_sibling;
   }
 
-  if (has_type) {
-    own_size += 1 + sizeof(uint32_t);
-  }
-  if (has_min) {
-    own_size += 1 + sizeof(double);
-  }
-  if (has_max) {
-    own_size += 1 + sizeof(double);
-  }
-  if (has_multiple_of) {
-    own_size += 1 + sizeof(double);
-  }
-  if (has_ex_min) {
-    own_size += 1 + sizeof(double);
-  }
-  if (has_ex_max) {
-    own_size += 1 + sizeof(double);
-  }
-  if (has_pattern) {
-    own_size += 1 + sizeof(uint32_t) + sizeof(uint32_t);
-  }
-  if (has_min_props) {
-    own_size += 1 + sizeof(int32_t);
-  }
-  if (has_max_props) {
-    own_size += 1 + sizeof(int32_t);
-  }
-  if (has_unique_items) {
-    own_size += 1;
-  }
-  if (has_min_len) {
-    own_size += 1 + sizeof(int32_t);
-  }
-  if (has_max_len) {
-    own_size += 1 + sizeof(int32_t);
-  }
-  if (has_min_items) {
-    own_size += 1 + sizeof(int32_t);
-  }
-  if (has_max_items) {
-    own_size += 1 + sizeof(int32_t);
-  }
-  if (has_items) {
-    own_size += 1 + sizeof(uint32_t);
-  }
-  if (has_contains) {
-    own_size += 1 + sizeof(uint32_t);
-  }
-  if (has_not) {
-    own_size += 1 + sizeof(uint32_t);
-  }
-  if (has_all_of) {
-    own_size += 1 + sizeof(uint32_t) + all_of_count * sizeof(uint32_t);
-  }
-  if (has_any_of) {
-    own_size += 1 + sizeof(uint32_t) + any_of_count * sizeof(uint32_t);
-  }
-  if (has_one_of) {
-    own_size += 1 + sizeof(uint32_t) + one_of_count * sizeof(uint32_t);
-  }
-  if (has_if) {
-    own_size += 1 + 3 * sizeof(uint32_t);
-  }
-  if (has_property_names) {
-    own_size += 1 + sizeof(uint32_t);
-  }
-  if (has_format) {
-    own_size += 1 + sizeof(uint32_t) + sizeof(uint32_t);
-  }
-  if (required_count > 0) {
-    own_size += 1 + sizeof(uint32_t) + required_count * (sizeof(uint32_t) + sizeof(uint32_t));
-  }
   if (prop_count > 0 || pattern_prop_count > 0 || has_additional_props) {
     own_size += 1 + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(int32_t)
              + prop_count * (sizeof(uint32_t) * 3)
@@ -390,105 +563,15 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
 
   uint32_t total_size = own_size;
 
-  // Recursively calculate subschemas in AST order
-  key_idx = nodes[node_idx].first_child;
-  while (key_idx != -1) {
-    ASTNode *key = &nodes[key_idx];
-    ASTNode *val = &nodes[key_idx + 1];
+  SizeVisitorCtx visitor_ctx;
+  visitor_ctx.offsets = offsets;
+  visitor_ctx.current_offset = current_offset;
+  visitor_ctx.data_size = data_size;
+  visitor_ctx.total_size = total_size;
 
-    if (token_equals(key->token, "items")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size, data_size);
-        total_size += sub_size;
-      }
-    } else if (token_equals(key->token, "contains")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size, data_size);
-        total_size += sub_size;
-      }
-    } else if (token_equals(key->token, "not")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size, data_size);
-        total_size += sub_size;
-      }
-    } else if (token_equals(key->token, "allOf") && val->type == AST_ARRAY) {
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        if (nodes[sub_idx].type == AST_OBJECT || is_ast_true(&nodes[sub_idx]) || is_ast_false(&nodes[sub_idx])) {
-          uint32_t sub_size = calculate_schema_size(nodes, sub_idx, offsets, current_offset + total_size, data_size);
-          total_size += sub_size;
-        }
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "anyOf") && val->type == AST_ARRAY) {
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        if (nodes[sub_idx].type == AST_OBJECT || is_ast_true(&nodes[sub_idx]) || is_ast_false(&nodes[sub_idx])) {
-          uint32_t sub_size = calculate_schema_size(nodes, sub_idx, offsets, current_offset + total_size, data_size);
-          total_size += sub_size;
-        }
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "oneOf") && val->type == AST_ARRAY) {
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        if (nodes[sub_idx].type == AST_OBJECT || is_ast_true(&nodes[sub_idx]) || is_ast_false(&nodes[sub_idx])) {
-          uint32_t sub_size = calculate_schema_size(nodes, sub_idx, offsets, current_offset + total_size, data_size);
-          total_size += sub_size;
-        }
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "if")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size, data_size);
-        total_size += sub_size;
-      }
-    } else if (token_equals(key->token, "then")) {
-      if (object_find_key_val_idx(nodes, node_idx, "if") != -1) {
-        if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-          uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size, data_size);
-          total_size += sub_size;
-        }
-      }
-    } else if (token_equals(key->token, "else")) {
-      if (object_find_key_val_idx(nodes, node_idx, "if") != -1) {
-        if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-          uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size, data_size);
-          total_size += sub_size;
-        }
-      }
-    } else if (token_equals(key->token, "propertyNames")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size, data_size);
-        total_size += sub_size;
-      }
-    } else if (token_equals(key->token, "properties") && val->type == AST_OBJECT) {
-      int p_idx = val->first_child;
-      while (p_idx != -1) {
-        ASTNode *p_val = &nodes[p_idx + 1];
-        uint32_t sub_size = calculate_schema_size(nodes, p_idx + 1, offsets, current_offset + total_size, data_size);
-        total_size += sub_size;
-        p_idx = p_val->next_sibling;
-      }
-    } else if (token_equals(key->token, "patternProperties") && val->type == AST_OBJECT) {
-      int p_idx = val->first_child;
-      while (p_idx != -1) {
-        ASTNode *p_val = &nodes[p_idx + 1];
-        uint32_t sub_size = calculate_schema_size(nodes, p_idx + 1, offsets, current_offset + total_size, data_size);
-        total_size += sub_size;
-        p_idx = p_val->next_sibling;
-      }
-    } else if (token_equals(key->token, "additionalProperties")) {
-      if (val->type == AST_OBJECT || is_ast_true(val)) {
-        uint32_t sub_size = calculate_schema_size(nodes, key_idx + 1, offsets, current_offset + total_size, data_size);
-        total_size += sub_size;
-      }
-    }
+  visit_subschemas(nodes, node_idx, size_visitor, &visitor_ctx);
 
-    key_idx = val->next_sibling;
-  }
-
-  return total_size;
+  return visitor_ctx.total_size;
   /*#endregion*/
 }
 
@@ -576,146 +659,200 @@ static void serialize_schema_direct(
   bool has_additional_props = false;
   int additional_props_val_idx = -1;
 
+  init_keyword_table();
+
   int key_idx = nodes[node_idx].first_child;
   while (key_idx != -1) {
     ASTNode *key = &nodes[key_idx];
     ASTNode *val = &nodes[key_idx + 1];
 
-    if (token_equals(key->token, "type")) {
-      has_type = true;
-      if (is_ast_string(val)) {
-        type_mask = map_type_string_to_mask(val->token);
-      } else if (val->type == AST_ARRAY) {
-        int t_idx = val->first_child;
-        while (t_idx != -1) {
-          type_mask |= map_type_string_to_mask(nodes[t_idx].token);
-          t_idx = nodes[t_idx].next_sibling;
+    uint32_t len = 0;
+    const char *stripped = get_stripped_string(key->token, &len);
+    if (stripped) {
+      const char *atom_k = atom_new(stripped, (int)len);
+      KeywordConfig *cfg = (KeywordConfig *)table_get(keyword_table, atom_k);
+      if (cfg) {
+        switch (cfg->id) {
+          case KWID_TYPE: {
+            has_type = true;
+            if (is_ast_string(val)) {
+              type_mask = map_type_string_to_mask(val->token);
+            } else if (val->type == AST_ARRAY) {
+              int t_idx = val->first_child;
+              while (t_idx != -1) {
+                type_mask |= map_type_string_to_mask(nodes[t_idx].token);
+                t_idx = nodes[t_idx].next_sibling;
+              }
+            }
+            break;
+          }
+          case KWID_MINIMUM:
+            has_min = true;
+            min_val = parse_number(val->token);
+            break;
+          case KWID_MAXIMUM:
+            has_max = true;
+            max_val = parse_number(val->token);
+            break;
+          case KWID_MULTIPLE_OF:
+            has_multiple_of = true;
+            multiple_of_val = parse_number(val->token);
+            break;
+          case KWID_EXCLUSIVE_MINIMUM:
+            has_ex_min = true;
+            ex_min_val = parse_number(val->token);
+            break;
+          case KWID_EXCLUSIVE_MAXIMUM:
+            has_ex_max = true;
+            ex_max_val = parse_number(val->token);
+            break;
+          case KWID_PATTERN:
+            has_pattern = true;
+            pattern_token = val->token;
+            break;
+          case KWID_MIN_PROPERTIES:
+            has_min_props = true;
+            min_props = (int32_t)parse_number(val->token);
+            break;
+          case KWID_MAX_PROPERTIES:
+            has_max_props = true;
+            max_props = (int32_t)parse_number(val->token);
+            break;
+          case KWID_UNIQUE_ITEMS:
+            has_unique_items = is_ast_true(val);
+            break;
+          case KWID_MIN_LENGTH:
+            has_min_len = true;
+            min_len = (int32_t)parse_number(val->token);
+            break;
+          case KWID_MAX_LENGTH:
+            has_max_len = true;
+            max_len = (int32_t)parse_number(val->token);
+            break;
+          case KWID_MIN_ITEMS:
+            has_min_items = true;
+            min_items = (int32_t)parse_number(val->token);
+            break;
+          case KWID_MAX_ITEMS:
+            has_max_items = true;
+            max_items = (int32_t)parse_number(val->token);
+            break;
+          case KWID_ITEMS:
+            if (is_valid_subschema_node(val)) {
+              has_items = true;
+              items_val_idx = key_idx + 1;
+            }
+            break;
+          case KWID_CONTAINS:
+            if (is_valid_subschema_node(val)) {
+              has_contains = true;
+              contains_val_idx = key_idx + 1;
+            }
+            break;
+          case KWID_NOT:
+            if (is_valid_subschema_node(val)) {
+              has_not = true;
+              not_val_idx = key_idx + 1;
+            }
+            break;
+          case KWID_ALL_OF:
+            if (val->type == AST_ARRAY) {
+              has_all_of = true;
+              all_of_val_idx = key_idx + 1;
+              int sub_idx = val->first_child;
+              while (sub_idx != -1) {
+                all_of_count++;
+                sub_idx = nodes[sub_idx].next_sibling;
+              }
+            }
+            break;
+          case KWID_ANY_OF:
+            if (val->type == AST_ARRAY) {
+              has_any_of = true;
+              any_of_val_idx = key_idx + 1;
+              int sub_idx = val->first_child;
+              while (sub_idx != -1) {
+                any_of_count++;
+                sub_idx = nodes[sub_idx].next_sibling;
+              }
+            }
+            break;
+          case KWID_ONE_OF:
+            if (val->type == AST_ARRAY) {
+              has_one_of = true;
+              one_of_val_idx = key_idx + 1;
+              int sub_idx = val->first_child;
+              while (sub_idx != -1) {
+                one_of_count++;
+                sub_idx = nodes[sub_idx].next_sibling;
+              }
+            }
+            break;
+          case KWID_IF:
+            if (is_valid_subschema_node(val)) {
+              has_if = true;
+              if_val_idx = key_idx + 1;
+            }
+            break;
+          case KWID_PROPERTY_NAMES:
+            if (is_valid_subschema_node(val)) {
+              has_property_names = true;
+              property_names_val_idx = key_idx + 1;
+            }
+            break;
+          case KWID_FORMAT:
+            has_format = true;
+            format_token = val->token;
+            break;
+          case KWID_THEN:
+            if (is_valid_subschema_node(val)) {
+              then_val_idx = key_idx + 1;
+            }
+            break;
+          case KWID_ELSE:
+            if (is_valid_subschema_node(val)) {
+              else_val_idx = key_idx + 1;
+            }
+            break;
+          case KWID_REQUIRED:
+            if (val->type == AST_ARRAY) {
+              required_val_idx = key_idx + 1;
+              int r_idx = val->first_child;
+              while (r_idx != -1) {
+                required_count++;
+                r_idx = nodes[r_idx].next_sibling;
+              }
+            }
+            break;
+          case KWID_PROPERTIES:
+            if (val->type == AST_OBJECT) {
+              properties_val_idx = key_idx + 1;
+              int p_idx = val->first_child;
+              while (p_idx != -1) {
+                prop_count++;
+                p_idx = nodes[p_idx + 1].next_sibling;
+              }
+            }
+            break;
+          case KWID_PATTERN_PROPERTIES:
+            if (val->type == AST_OBJECT) {
+              pattern_properties_val_idx = key_idx + 1;
+              int p_idx = val->first_child;
+              while (p_idx != -1) {
+                pattern_prop_count++;
+                p_idx = nodes[p_idx + 1].next_sibling;
+              }
+            }
+            break;
+          case KWID_ADDITIONAL_PROPERTIES:
+            has_additional_props = true;
+            additional_props_val_idx = key_idx + 1;
+            break;
+          default:
+            break;
         }
       }
-    } else if (token_equals(key->token, "minimum")) {
-      has_min = true;
-      min_val = parse_number(val->token);
-    } else if (token_equals(key->token, "maximum")) {
-      has_max = true;
-      max_val = parse_number(val->token);
-    } else if (token_equals(key->token, "multipleOf")) {
-      has_multiple_of = true;
-      multiple_of_val = parse_number(val->token);
-    } else if (token_equals(key->token, "exclusiveMinimum")) {
-      has_ex_min = true;
-      ex_min_val = parse_number(val->token);
-    } else if (token_equals(key->token, "exclusiveMaximum")) {
-      has_ex_max = true;
-      ex_max_val = parse_number(val->token);
-    } else if (token_equals(key->token, "pattern")) {
-      has_pattern = true;
-      pattern_token = val->token;
-    } else if (token_equals(key->token, "minProperties")) {
-      has_min_props = true;
-      min_props = (int32_t)parse_number(val->token);
-    } else if (token_equals(key->token, "maxProperties")) {
-      has_max_props = true;
-      max_props = (int32_t)parse_number(val->token);
-    } else if (token_equals(key->token, "uniqueItems")) {
-      has_unique_items = is_ast_true(val);
-    } else if (token_equals(key->token, "minLength")) {
-      has_min_len = true;
-      min_len = (int32_t)parse_number(val->token);
-    } else if (token_equals(key->token, "maxLength")) {
-      has_max_len = true;
-      max_len = (int32_t)parse_number(val->token);
-    } else if (token_equals(key->token, "minItems")) {
-      has_min_items = true;
-      min_items = (int32_t)parse_number(val->token);
-    } else if (token_equals(key->token, "maxItems")) {
-      has_max_items = true;
-      max_items = (int32_t)parse_number(val->token);
-    } else if (token_equals(key->token, "items")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_items = true;
-        items_val_idx = key_idx + 1;
-      }
-    } else if (token_equals(key->token, "contains")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_contains = true;
-        contains_val_idx = key_idx + 1;
-      }
-    } else if (token_equals(key->token, "not")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_not = true;
-        not_val_idx = key_idx + 1;
-      }
-    } else if (token_equals(key->token, "allOf") && val->type == AST_ARRAY) {
-      has_all_of = true;
-      all_of_val_idx = key_idx + 1;
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        all_of_count++;
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "anyOf") && val->type == AST_ARRAY) {
-      has_any_of = true;
-      any_of_val_idx = key_idx + 1;
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        any_of_count++;
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "oneOf") && val->type == AST_ARRAY) {
-      has_one_of = true;
-      one_of_val_idx = key_idx + 1;
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        one_of_count++;
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "if")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_if = true;
-        if_val_idx = key_idx + 1;
-      }
-    } else if (token_equals(key->token, "propertyNames")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        has_property_names = true;
-        property_names_val_idx = key_idx + 1;
-      }
-    } else if (token_equals(key->token, "format")) {
-      has_format = true;
-      format_token = val->token;
-    } else if (token_equals(key->token, "then")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        then_val_idx = key_idx + 1;
-      }
-    } else if (token_equals(key->token, "else")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        else_val_idx = key_idx + 1;
-      }
-    } else if (token_equals(key->token, "required") && val->type == AST_ARRAY) {
-      required_val_idx = key_idx + 1;
-      int r_idx = val->first_child;
-      while (r_idx != -1) {
-        required_count++;
-        r_idx = nodes[r_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "properties") && val->type == AST_OBJECT) {
-      properties_val_idx = key_idx + 1;
-      int p_idx = val->first_child;
-      while (p_idx != -1) {
-        prop_count++;
-        p_idx = nodes[p_idx + 1].next_sibling;
-      }
-    } else if (token_equals(key->token, "patternProperties") && val->type == AST_OBJECT) {
-      pattern_properties_val_idx = key_idx + 1;
-      int p_idx = val->first_child;
-      while (p_idx != -1) {
-        pattern_prop_count++;
-        p_idx = nodes[p_idx + 1].next_sibling;
-      }
-    } else if (token_equals(key->token, "additionalProperties")) {
-      has_additional_props = true;
-      additional_props_val_idx = key_idx + 1;
     }
-
     key_idx = val->next_sibling;
   }
 
@@ -876,90 +1013,14 @@ static void serialize_schema_direct(
   uint32_t own_written = (uint32_t)(pc - (bytecode + *code_write_ptr));
   *code_write_ptr += own_written;
 
-  // Recursively serialize subschemas in AST order
-  key_idx = nodes[node_idx].first_child;
-  while (key_idx != -1) {
-    ASTNode *key = &nodes[key_idx];
-    ASTNode *val = &nodes[key_idx + 1];
+  SerializeVisitorCtx visitor_ctx;
+  visitor_ctx.offsets = offsets;
+  visitor_ctx.bytecode = bytecode;
+  visitor_ctx.code_write_ptr = code_write_ptr;
+  visitor_ctx.data_write_ptr = data_write_ptr;
+  visitor_ctx.constant_pool_start = constant_pool_start;
 
-    if (token_equals(key->token, "items")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-      }
-    } else if (token_equals(key->token, "contains")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-      }
-    } else if (token_equals(key->token, "not")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-      }
-    } else if (token_equals(key->token, "allOf") && val->type == AST_ARRAY) {
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        if (nodes[sub_idx].type == AST_OBJECT || is_ast_true(&nodes[sub_idx]) || is_ast_false(&nodes[sub_idx])) {
-          serialize_schema_direct(nodes, sub_idx, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-        }
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "anyOf") && val->type == AST_ARRAY) {
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        if (nodes[sub_idx].type == AST_OBJECT || is_ast_true(&nodes[sub_idx]) || is_ast_false(&nodes[sub_idx])) {
-          serialize_schema_direct(nodes, sub_idx, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-        }
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "oneOf") && val->type == AST_ARRAY) {
-      int sub_idx = val->first_child;
-      while (sub_idx != -1) {
-        if (nodes[sub_idx].type == AST_OBJECT || is_ast_true(&nodes[sub_idx]) || is_ast_false(&nodes[sub_idx])) {
-          serialize_schema_direct(nodes, sub_idx, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-        }
-        sub_idx = nodes[sub_idx].next_sibling;
-      }
-    } else if (token_equals(key->token, "if")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-      }
-    } else if (token_equals(key->token, "then")) {
-      if (object_find_key_val_idx(nodes, node_idx, "if") != -1) {
-        if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-          serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-        }
-      }
-    } else if (token_equals(key->token, "else")) {
-      if (object_find_key_val_idx(nodes, node_idx, "if") != -1) {
-        if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-          serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-        }
-      }
-    } else if (token_equals(key->token, "propertyNames")) {
-      if (val->type == AST_OBJECT || is_ast_true(val) || is_ast_false(val)) {
-        serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-      }
-    } else if (token_equals(key->token, "properties") && val->type == AST_OBJECT) {
-      int p_idx = val->first_child;
-      while (p_idx != -1) {
-        ASTNode *p_val = &nodes[p_idx + 1];
-        serialize_schema_direct(nodes, p_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-        p_idx = p_val->next_sibling;
-      }
-    } else if (token_equals(key->token, "patternProperties") && val->type == AST_OBJECT) {
-      int p_idx = val->first_child;
-      while (p_idx != -1) {
-        ASTNode *p_val = &nodes[p_idx + 1];
-        serialize_schema_direct(nodes, p_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-        p_idx = p_val->next_sibling;
-      }
-    } else if (token_equals(key->token, "additionalProperties")) {
-      if (val->type == AST_OBJECT || is_ast_true(val)) {
-        serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, code_write_ptr, data_write_ptr, constant_pool_start);
-      }
-    }
-
-    key_idx = val->next_sibling;
-  }
+  visit_subschemas(nodes, node_idx, serialize_visitor, &visitor_ctx);
   /*#endregion*/
 }
 
