@@ -83,6 +83,144 @@ static bool key_matches_token_ast(const char *k_start, size_t k_len, Token t) {
   /*#endregion*/
 }
 
+static bool ast_nodes_equal(const ASTNode *pool, int n1_idx, int n2_idx) {
+  /*#region*/
+  if (n1_idx == -1 && n2_idx == -1) return true;
+  if (n1_idx == -1 || n2_idx == -1) return false;
+
+  const ASTNode *n1 = &pool[n1_idx];
+  const ASTNode *n2 = &pool[n2_idx];
+
+  ASTNodeType type1 = n1->type;
+  ASTNodeType type2 = n2->type;
+
+  if (type1 == AST_LEAF) {
+    if (n1->token.type == T_STRING) type1 = AST_STRING;
+    else if (n1->token.type == T_NUMBER) type1 = AST_NUMBER;
+    else if (n1->token.type == T_NULL) type1 = AST_NULL;
+    else if (n1->token.type == T_TRUE) type1 = AST_TRUE;
+    else if (n1->token.type == T_FALSE) type1 = AST_FALSE;
+  }
+  if (type2 == AST_LEAF) {
+    if (n2->token.type == T_STRING) type2 = AST_STRING;
+    else if (n2->token.type == T_NUMBER) type2 = AST_NUMBER;
+    else if (n2->token.type == T_NULL) type2 = AST_NULL;
+    else if (n2->token.type == T_TRUE) type2 = AST_TRUE;
+    else if (n2->token.type == T_FALSE) type2 = AST_FALSE;
+  }
+
+  if (type1 != type2) return false;
+
+  switch (type1) {
+    case AST_NULL:
+    case AST_TRUE:
+    case AST_FALSE:
+      return true;
+
+    case AST_NUMBER:
+      return n1->token.value.number == n2->token.value.number;
+
+    case AST_STRING: {
+      const char *s1 = (const char *)n1->token.value.string.start;
+      size_t len1 = n1->token.value.string.length;
+      const char *s2 = (const char *)n2->token.value.string.start;
+      size_t len2 = n2->token.value.string.length;
+      
+      if (len1 >= 2 && s1[0] == '"' && s1[len1 - 1] == '"') {
+        s1++;
+        len1 -= 2;
+      }
+      if (len2 >= 2 && s2[0] == '"' && s2[len2 - 1] == '"') {
+        s2++;
+        len2 -= 2;
+      }
+      if (len1 != len2) return false;
+      return memcmp(s1, s2, len1) == 0;
+    }
+
+    case AST_ARRAY: {
+      int c1 = n1->first_child;
+      int c2 = n2->first_child;
+      while (c1 != -1 && c2 != -1) {
+        while (c1 != -1 && pool[c1].type == AST_SKIPPED) {
+          c1 = pool[c1].next_sibling;
+        }
+        while (c2 != -1 && pool[c2].type == AST_SKIPPED) {
+          c2 = pool[c2].next_sibling;
+        }
+        if (c1 == -1 && c2 == -1) break;
+        if (c1 == -1 || c2 == -1) return false;
+        if (!ast_nodes_equal(pool, c1, c2)) return false;
+        c1 = pool[c1].next_sibling;
+        c2 = pool[c2].next_sibling;
+      }
+      while (c1 != -1 && pool[c1].type == AST_SKIPPED) {
+        c1 = pool[c1].next_sibling;
+      }
+      while (c2 != -1 && pool[c2].type == AST_SKIPPED) {
+        c2 = pool[c2].next_sibling;
+      }
+      return (c1 == -1 && c2 == -1);
+    }
+
+    case AST_OBJECT: {
+      int count1 = 0;
+      int c1 = n1->first_child;
+      while (c1 != -1) {
+        int val1_idx = pool[c1].next_sibling;
+        if (pool[c1].type != AST_SKIPPED) {
+          count1++;
+          const ASTNode *key1 = &pool[c1];
+          const char *k1_start = (const char *)key1->token.value.string.start;
+          size_t k1_len = key1->token.value.string.length;
+          if (k1_len >= 2 && k1_start[0] == '"' && k1_start[k1_len - 1] == '"') {
+            k1_start++;
+            k1_len -= 2;
+          }
+          
+          int c2 = n2->first_child;
+          int found_idx = -1;
+          while (c2 != -1) {
+            int val2_idx = pool[c2].next_sibling;
+            if (pool[c2].type != AST_SKIPPED) {
+              const ASTNode *key2 = &pool[c2];
+              const char *k2_start = (const char *)key2->token.value.string.start;
+              size_t k2_len = key2->token.value.string.length;
+              if (k2_len >= 2 && k2_start[0] == '"' && k2_start[k2_len - 1] == '"') {
+                k2_start++;
+                k2_len -= 2;
+              }
+              if (k1_len == k2_len && memcmp(k1_start, k2_start, k1_len) == 0) {
+                found_idx = val2_idx;
+                break;
+              }
+            }
+            c2 = pool[val2_idx].next_sibling;
+          }
+          if (found_idx == -1) return false;
+          if (!ast_nodes_equal(pool, val1_idx, found_idx)) return false;
+        }
+        c1 = pool[val1_idx].next_sibling;
+      }
+      
+      int count2 = 0;
+      int c2 = n2->first_child;
+      while (c2 != -1) {
+        int val2_idx = pool[c2].next_sibling;
+        if (pool[c2].type != AST_SKIPPED) {
+          count2++;
+        }
+        c2 = pool[val2_idx].next_sibling;
+      }
+      return count1 == count2;
+    }
+
+    default:
+      return false;
+  }
+  /*#endregion*/
+}
+
 /* Opcode execution loop on ASTNode pool index */
 bool validate_bytecode(
     Jsonv_Context *ctx,
@@ -517,6 +655,32 @@ bool validate_bytecode(
           }
         }
         break;
+      }
+
+      case OP_UNIQUE_ITEMS: {
+        /*#region*/
+        if (node->type == AST_ARRAY) {
+          int c1 = node->first_child;
+          while (c1 != -1) {
+            if (pool[c1].type != AST_SKIPPED) {
+              int c2 = pool[c1].next_sibling;
+              while (c2 != -1) {
+                if (pool[c2].type != AST_SKIPPED) {
+                  if (ast_nodes_equal(pool, c1, c2)) {
+                    out_err->type = Jsonv_UniqueItems_error;
+                    out_err->path = path;
+                    snprintf(out_err->description, sizeof(out_err->description), "Array items must be unique.");
+                    return false;
+                  }
+                }
+                c2 = pool[c2].next_sibling;
+              }
+            }
+            c1 = pool[c1].next_sibling;
+          }
+        }
+        break;
+        /*#endregion*/
       }
 
       default:

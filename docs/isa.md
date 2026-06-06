@@ -272,6 +272,19 @@ Asserts that the number of properties in an object is less than or equal to a ma
 * **Format**: `[0x11] [4 bytes max_props]` (5 bytes)
 * **VM Semantics**: If the current data node is an object and contains more than `max_props` properties, validation aborts with a `Jsonv_MaxProperties_error`. Non-object nodes ignore this instruction.
 
+---
+
+### 3.I OP_UNIQUE_ITEMS (0x12)
+Asserts that all elements in an array are unique.
+```
++---------------------+
+| OP_UNIQUE_ITEMS(0x12)|
++---------------------+
+```
+* **Format**: `[0x12]` (1 byte)
+* **VM Semantics**: If the current data node is an array, the VM recursively compares every element against all subsequent elements. If any two elements are equal, validation aborts with a `Jsonv_UniqueItems_error`. Non-array nodes ignore this instruction.
+
+
 
 
 

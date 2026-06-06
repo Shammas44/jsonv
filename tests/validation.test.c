@@ -310,3 +310,36 @@ TIMED_TEST(T, nested_schemas, init, fini)
   cr_expect_eq(err.type, Jsonv_Type_error);
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, unique_items_validation, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\"type\": \"array\", \"uniqueItems\": true}";
+
+  // Unique arrays
+  cr_expect(run_validation(schema, "[]", &err));
+  cr_expect(run_validation(schema, "[1, 2, 3]", &err));
+  cr_expect(run_validation(schema, "[\"a\", \"b\", \"c\"]", &err));
+  cr_expect(run_validation(schema, "[true, false, null]", &err));
+  cr_expect(run_validation(schema, "[{\"a\": 1}, {\"a\": 2}]", &err));
+  cr_expect(run_validation(schema, "[[1, 2], [1, 3]]", &err));
+
+  // Non-unique arrays
+  cr_expect(!run_validation(schema, "[1, 2, 2]", &err));
+  cr_expect_eq(err.type, Jsonv_UniqueItems_error);
+
+  cr_expect(!run_validation(schema, "[\"a\", \"b\", \"a\"]", &err));
+  cr_expect_eq(err.type, Jsonv_UniqueItems_error);
+
+  cr_expect(!run_validation(schema, "[true, true]", &err));
+  cr_expect_eq(err.type, Jsonv_UniqueItems_error);
+
+  cr_expect(!run_validation(schema, "[{\"a\": 1}, {\"a\": 1}]", &err));
+  cr_expect_eq(err.type, Jsonv_UniqueItems_error);
+
+  cr_expect(!run_validation(schema, "[[1, 2], [1, 2]]", &err));
+  cr_expect_eq(err.type, Jsonv_UniqueItems_error);
+/*#endregion*/
+END_TIMED_TEST
+
