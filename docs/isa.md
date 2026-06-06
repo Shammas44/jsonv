@@ -236,4 +236,17 @@ Asserts numeric values are strictly less than an upper bound.
 * **Format**: `[0x0E] [8 bytes max_val]` (9 bytes)
 * **VM Semantics**: If the current data node is a number and its value is $\ge \text{max\_val}$, validation aborts with a `Jsonv_ExclusiveMaximum_error`. Non-numeric nodes ignore this instruction.
 
+---
+
+### 3.F OP_PATTERN (0x0F)
+Asserts that a string instance matches a regular expression.
+```
++---------------+-----------------------------+
+|OP_PATTERN(0x0F)|    pattern_token (Token)    |
++---------------+-----------------------------+
+```
+* **Format**: `[0x0F] [24 bytes pattern_token]` (25 bytes)
+* **VM Semantics**: If the current data node is a string, the VM compiles the regular expression in `pattern_token` using POSIX Extended Regular Expressions (`REG_EXTENDED`) and matches the string against it. If it does not match, validation aborts with a `Jsonv_Pattern_error`. If regex compilation fails, it aborts with a `Jsonv_Compile_Regexp_Failed`. Non-string nodes ignore this instruction.
+
+
 

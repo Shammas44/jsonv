@@ -199,6 +199,23 @@ TIMED_TEST(T, string_lengths, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, pattern_validation, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\"type\": \"string\", \"pattern\": \"^a[0-9]+b$\"}";
+
+  cr_expect(run_validation(schema, "\"a123b\"", &err));
+  cr_expect(run_validation(schema, "\"a0b\"", &err));
+
+  cr_expect(!run_validation(schema, "\"ab\"", &err));
+  cr_expect_eq(err.type, Jsonv_Pattern_error);
+
+  cr_expect(!run_validation(schema, "\"a123bc\"", &err));
+  cr_expect_eq(err.type, Jsonv_Pattern_error);
+/*#endregion*/
+END_TIMED_TEST
+
 TIMED_TEST(T, array_items_constraints, init, fini)
 /*#region*/
   E err = {0};

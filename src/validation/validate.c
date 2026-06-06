@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <regex.h>
 
 struct Jsonv_Schema {
   uint8_t *bytecode;
@@ -218,6 +219,53 @@ bool validate_bytecode(
             out_err->type = Jsonv_ExclusiveMaximum_error;
             out_err->path = path;
             snprintf(out_err->description, sizeof(out_err->description), "Value too large, expected < %.2f, got %.2f.", max_val, num);
+            return false;
+          }
+        }
+        break;
+      }
+
+      case OP_PATTERN: {
+        Token pat_token = read_token(&pc);
+        if (node->type == AST_LEAF && node->token.type == T_STRING) {
+          const char *val_start = (const char *)node->token.value.string.start;
+          size_t val_len = node->token.value.string.length;
+          if (val_len >= 2 && val_start[0] == '"' && val_start[val_len - 1] == '"') {
+            val_start++;
+            val_len -= 2;
+          }
+
+          char *target_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), val_len + 1);
+          if (!target_str) return false;
+          memcpy(target_str, val_start, val_len);
+          target_str[val_len] = '\0';
+
+          const char *pat_start = (const char *)pat_token.value.string.start;
+          size_t pat_len = pat_token.value.string.length;
+          if (pat_len >= 2 && pat_start[0] == '"' && pat_start[pat_len - 1] == '"') {
+            pat_start++;
+            pat_len -= 2;
+          }
+          char *pattern_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), pat_len + 1);
+          if (!pattern_str) return false;
+          memcpy(pattern_str, pat_start, pat_len);
+          pattern_str[pat_len] = '\0';
+
+          regex_t regex;
+          if (regcomp(&regex, pattern_str, REG_EXTENDED | REG_NOSUB) != 0) {
+            out_err->type = Jsonv_Compile_Regexp_Failed;
+            out_err->path = path;
+            snprintf(out_err->description, sizeof(out_err->description), "Failed to compile regex pattern '%s'.", pattern_str);
+            return false;
+          }
+
+          int match_res = regexec(&regex, target_str, 0, NULL, 0);
+          regfree(&regex);
+
+          if (match_res != 0) {
+            out_err->type = Jsonv_Pattern_error;
+            out_err->path = path;
+            snprintf(out_err->description, sizeof(out_err->description), "String '%s' does not match pattern '%s'.", target_str, pattern_str);
             return false;
           }
         }
