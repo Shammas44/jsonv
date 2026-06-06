@@ -183,21 +183,23 @@ Asserts that specified object keys are present.
 ---
 
 ### 3.B OP_PROPERTIES (0x0B)
-Handles object property keys validation and additional properties enforcement.
+Handles object properties, patternProperties, and additionalProperties validation.
 ```
-+-------------------+-------------------+------------------------+
-|OP_PROPERTIES(0x0B)|  count (uint32_t)  |  add_offset (int32_t)  |
-+-------------------+-------------------+------------------------+
-|                      (Token key, uint32_t offset)[count]       |
-+----------------------------------------------------------------+
++-------------------+--------------------+--------------------+------------------------+
+|OP_PROPERTIES(0x0B)|   count (uint32_t) | pat_count (uint32_t)|  add_offset (int32_t)  |
++-------------------+--------------------+--------------------+------------------------+
+|                       (Token key, uint32_t offset)[count]                            |
++--------------------------------------------------------------------------------------+
+|                       (Token pattern, uint32_t offset)[pat_count]                    |
++--------------------------------------------------------------------------------------+
 ```
-* **Format**: `[0x0B] [4 bytes count] [4 bytes add_offset] [count * 28 bytes key/offset entries]`
+* **Format**: `[0x0B] [4 bytes count] [4 bytes pat_count] [4 bytes add_offset] [count * 28 bytes key/offset entries] [pat_count * 28 bytes pattern/offset entries]`
 * **VM Semantics**: If the current data node is an object, the VM processes each property field:
-  1. Matches the field key string against the list of `count` property keys.
-  2. If matched, recursively validates the property value node against the subschema at the corresponding `offset`.
-  3. If unmatched (i.e. it is an additional property):
+  1. Matches the field key string against the list of `count` static property keys. If matched, recursively validates the property value node against the subschema at the corresponding `offset`, and marks the key as matched.
+  2. Matches the field key string against the list of `pat_count` regular expression patterns. For each pattern that matches, recursively validates the property value node against the subschema at the corresponding `offset`, and marks the key as matched.
+  3. If the key is unmatched by both static properties and patternProperties:
      * If `add_offset == -2`, validation immediately aborts with `Jsonv_AdditionalProperties_error`.
-     * If `add_offset >= 0`, recursively validates the value node against the subschema at the absolute bytecode `add_offset`.
+     * If `add_offset >= 0`, recursively validates the property value node against the subschema at the absolute bytecode `add_offset`.
      * If `add_offset == -1`, the property is allowed without validation.
 
 ---

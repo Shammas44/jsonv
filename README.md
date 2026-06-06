@@ -41,7 +41,7 @@ These keywords constrain the properties, size, and structure of object instances
 - [x] `minProperties`: The object must have a number of properties >= to this value.
 - [x] `required`: A list of property names that **must be present** in the object instance.
 - [x] `properties`: An object where keys are property names and values are schemas.
-- [ ] `patternProperties`: Similar to `properties`, but keys are regular expressions.
+- [x] `patternProperties`: Similar to `properties`, but keys are regular expressions.
 - [x] `additionalProperties`:  Defines the schema for any properties **not explicitly listed**.
 - [x] `propertyNames`: The name of every property in the object must validate against this schema
 

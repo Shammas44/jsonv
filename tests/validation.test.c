@@ -526,3 +526,34 @@ TIMED_TEST(T, property_names_validation, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, pattern_properties_validation, init, fini)
+/*#region*/
+  E err = {0};
+
+  // Property keys starting with "f" must be integers.
+  // Property keys starting with "s" must be strings.
+  // Additional properties are not allowed.
+  const char *schema = "{\n"
+                       "  \"patternProperties\": {\n"
+                       "    \"^f\": {\"type\": \"integer\"},\n"
+                       "    \"^s\": {\"type\": \"string\"}\n"
+                       "  },\n"
+                       "  \"additionalProperties\": false\n"
+                       "}";
+
+  // Case 1: valid keys and values -> passes
+  cr_expect(run_validation(schema, "{\"foo\": 42, \"str\": \"hello\"}", &err));
+
+  // Case 2: invalid value for key starting with "f" -> fails type constraint
+  cr_expect(!run_validation(schema, "{\"foo\": \"not_an_int\", \"str\": \"hello\"}", &err));
+  cr_expect_eq(err.type, Jsonv_Type_error);
+
+  // Case 3: invalid value for key starting with "s" -> fails type constraint
+  cr_expect(!run_validation(schema, "{\"foo\": 42, \"str\": true}", &err));
+  cr_expect_eq(err.type, Jsonv_Type_error);
+
+  // Case 4: key that starts with neither "f" nor "s" -> fails additionalProperties
+  cr_expect(!run_validation(schema, "{\"foo\": 42, \"str\": \"hello\", \"bar\": 1}", &err));
+  cr_expect_eq(err.type, Jsonv_AdditionalProperties_error);
+/*#endregion*/
+END_TIMED_TEST

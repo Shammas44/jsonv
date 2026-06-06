@@ -165,6 +165,7 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   bool has_unique_items = false;
   bool has_if = false;
   bool has_property_names = false;
+  int pattern_prop_count = 0;
 
   int key_idx = nodes[node_idx].first_child;
   while (key_idx != -1) {
@@ -252,6 +253,12 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
         prop_count++;
         p_idx = nodes[p_idx + 1].next_sibling;
       }
+    } else if (token_equals(key->token, "patternProperties") && val->type == AST_OBJECT) {
+      int p_idx = val->first_child;
+      while (p_idx != -1) {
+        pattern_prop_count++;
+        p_idx = nodes[p_idx + 1].next_sibling;
+      }
     } else if (token_equals(key->token, "additionalProperties")) {
       has_additional_props = true;
     }
@@ -328,8 +335,10 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   if (required_count > 0) {
     own_size += 1 + sizeof(uint32_t) + required_count * sizeof(Token);
   }
-  if (prop_count > 0 || has_additional_props) {
-    own_size += 1 + sizeof(uint32_t) + sizeof(int32_t) + prop_count * (sizeof(Token) + sizeof(uint32_t));
+  if (prop_count > 0 || pattern_prop_count > 0 || has_additional_props) {
+    own_size += 1 + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(int32_t)
+             + prop_count * (sizeof(Token) + sizeof(uint32_t))
+             + pattern_prop_count * (sizeof(Token) + sizeof(uint32_t));
   }
   own_size += 1; // OP_END
 
@@ -408,6 +417,14 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
         total_size += sub_size;
       }
     } else if (token_equals(key->token, "properties") && val->type == AST_OBJECT) {
+      int p_idx = val->first_child;
+      while (p_idx != -1) {
+        ASTNode *p_val = &nodes[p_idx + 1];
+        uint32_t sub_size = calculate_schema_size(nodes, p_idx + 1, offsets, current_offset + total_size);
+        total_size += sub_size;
+        p_idx = p_val->next_sibling;
+      }
+    } else if (token_equals(key->token, "patternProperties") && val->type == AST_OBJECT) {
       int p_idx = val->first_child;
       while (p_idx != -1) {
         ASTNode *p_val = &nodes[p_idx + 1];
@@ -494,6 +511,8 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
   int else_val_idx = -1;
   bool has_property_names = false;
   int property_names_val_idx = -1;
+  int pattern_prop_count = 0;
+  int pattern_properties_val_idx = -1;
   int required_count = 0;
   int required_val_idx = -1;
   int prop_count = 0;
@@ -626,6 +645,13 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
         prop_count++;
         p_idx = nodes[p_idx + 1].next_sibling;
       }
+    } else if (token_equals(key->token, "patternProperties") && val->type == AST_OBJECT) {
+      pattern_properties_val_idx = key_idx + 1;
+      int p_idx = val->first_child;
+      while (p_idx != -1) {
+        pattern_prop_count++;
+        p_idx = nodes[p_idx + 1].next_sibling;
+      }
     } else if (token_equals(key->token, "additionalProperties")) {
       has_additional_props = true;
       additional_props_val_idx = key_idx + 1;
@@ -747,9 +773,10 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
       r_idx = nodes[r_idx].next_sibling;
     }
   }
-  if (prop_count > 0 || has_additional_props) {
+  if (prop_count > 0 || pattern_prop_count > 0 || has_additional_props) {
     emit_byte(&pc, OP_PROPERTIES);
     emit_uint32(&pc, (uint32_t)prop_count);
+    emit_uint32(&pc, (uint32_t)pattern_prop_count);
     int32_t add_rule = -1;
     if (has_additional_props && additional_props_val_idx != -1) {
       ASTNode *add_val = &nodes[additional_props_val_idx];
@@ -763,6 +790,16 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
 
     if (prop_count > 0 && properties_val_idx != -1) {
       int p_idx = nodes[properties_val_idx].first_child;
+      while (p_idx != -1) {
+        ASTNode *p_key = &nodes[p_idx];
+        emit_token(&pc, p_key->token);
+        emit_uint32(&pc, offsets[p_idx + 1]);
+        p_idx = nodes[p_idx + 1].next_sibling;
+      }
+    }
+
+    if (pattern_prop_count > 0 && pattern_properties_val_idx != -1) {
+      int p_idx = nodes[pattern_properties_val_idx].first_child;
       while (p_idx != -1) {
         ASTNode *p_key = &nodes[p_idx];
         emit_token(&pc, p_key->token);
@@ -839,6 +876,13 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
         serialize_schema_direct(nodes, key_idx + 1, offsets, bytecode, write_ptr);
       }
     } else if (token_equals(key->token, "properties") && val->type == AST_OBJECT) {
+      int p_idx = val->first_child;
+      while (p_idx != -1) {
+        ASTNode *p_val = &nodes[p_idx + 1];
+        serialize_schema_direct(nodes, p_idx + 1, offsets, bytecode, write_ptr);
+        p_idx = p_val->next_sibling;
+      }
+    } else if (token_equals(key->token, "patternProperties") && val->type == AST_OBJECT) {
       int p_idx = val->first_child;
       while (p_idx != -1) {
         ASTNode *p_val = &nodes[p_idx + 1];

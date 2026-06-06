@@ -83,6 +83,40 @@ static bool key_matches_token_ast(const char *k_start, size_t k_len, Token t) {
   /*#endregion*/
 }
 
+static bool regex_matches_key(const char *k_start, size_t k_len, Token pat_token, Jsonv_Context *ctx, const char *path, E *out_err) {
+  /*#region*/
+  const char *pat_start = (const char *)pat_token.value.string.start;
+  size_t pat_len = pat_token.value.string.length;
+  if (pat_len >= 2 && pat_start[0] == '"' && pat_start[pat_len - 1] == '"') {
+    pat_start++;
+    pat_len -= 2;
+  }
+  char *pattern_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), pat_len + 1);
+  if (!pattern_str) return false;
+  memcpy(pattern_str, pat_start, pat_len);
+  pattern_str[pat_len] = '\0';
+
+  char *target_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), k_len + 1);
+  if (!target_str) return false;
+  memcpy(target_str, k_start, k_len);
+  target_str[k_len] = '\0';
+
+  regex_t regex;
+  if (regcomp(&regex, pattern_str, REG_EXTENDED | REG_NOSUB) != 0) {
+    out_err->type = Jsonv_Compile_Regexp_Failed;
+    out_err->path = path;
+    snprintf(out_err->description, sizeof(out_err->description), "Failed to compile regex pattern '%s'.", pattern_str);
+    return false;
+  }
+
+  int match_res = regexec(&regex, target_str, 0, NULL, 0);
+  regfree(&regex);
+
+  return match_res == 0;
+  /*#endregion*/
+}
+
+
 static bool ast_nodes_equal(const ASTNode *pool, int n1_idx, int n2_idx) {
   /*#region*/
   if (n1_idx == -1 && n2_idx == -1) return true;
@@ -575,7 +609,9 @@ bool validate_bytecode(
       }
 
       case OP_PROPERTIES: {
+        /*#region*/
         uint32_t prop_count = read_uint32(&pc);
+        uint32_t pattern_prop_count = read_uint32(&pc);
         int32_t additional_props_rule = read_int32(&pc);
 
         DecodedPropertyRule *props = NULL;
@@ -592,6 +628,20 @@ bool validate_bytecode(
           props[k].rule_offset = read_uint32(&pc);
         }
 
+        DecodedPropertyRule *pattern_props = NULL;
+        DecodedPropertyRule stack_pattern_props[64];
+        if (pattern_prop_count <= 64) {
+          pattern_props = stack_pattern_props;
+        } else {
+          pattern_props = (DecodedPropertyRule *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), pattern_prop_count * sizeof(DecodedPropertyRule));
+          if (!pattern_props) return false;
+        }
+
+        for (uint32_t k = 0; k < pattern_prop_count; k++) {
+          pattern_props[k].key = read_token(&pc);
+          pattern_props[k].rule_offset = read_uint32(&pc);
+        }
+
         if (node->type == AST_OBJECT) {
           int curr = node->first_child;
           while (curr != -1) {
@@ -602,17 +652,6 @@ bool validate_bytecode(
               // Extract key string view
               const char *k_start = (const char *)k.value.string.start;
               size_t k_len = k.value.string.length;
-
-              // Match against properties in the decoded list
-              bool matched = false;
-              uint32_t prop_rule_offset = 0;
-              for (uint32_t p = 0; p < prop_count; p++) {
-                if (key_matches_token_ast(k_start, k_len, props[p].key)) {
-                  matched = true;
-                  prop_rule_offset = props[p].rule_offset;
-                  break;
-                }
-              }
 
               // Construct new path for validation errors
               size_t p_len = strlen(path);
@@ -626,14 +665,42 @@ bool validate_bytecode(
                 }
               }
 
-              if (matched) {
-                if (val_idx != -1) {
-                  if (!validate_bytecode(ctx, pool, schema, prop_rule_offset, val_idx, new_path ? new_path : path, out_err)) {
-                    return false;
+              bool matched = false;
+
+              // Match against properties
+              for (uint32_t p = 0; p < prop_count; p++) {
+                if (key_matches_token_ast(k_start, k_len, props[p].key)) {
+                  matched = true;
+                  if (val_idx != -1) {
+                    if (!validate_bytecode(ctx, pool, schema, props[p].rule_offset, val_idx, new_path ? new_path : path, out_err)) {
+                      return false;
+                    }
                   }
+                  break;
                 }
-              } else {
-                // Check additional properties rule
+              }
+
+              // Match against patternProperties
+              bool compile_failed = false;
+              for (uint32_t p = 0; p < pattern_prop_count; p++) {
+                E temp_err = {0};
+                if (regex_matches_key(k_start, k_len, pattern_props[p].key, ctx, path, &temp_err)) {
+                  matched = true;
+                  if (val_idx != -1) {
+                    if (!validate_bytecode(ctx, pool, schema, pattern_props[p].rule_offset, val_idx, new_path ? new_path : path, out_err)) {
+                      return false;
+                    }
+                  }
+                } else if (temp_err.type == Jsonv_Compile_Regexp_Failed) {
+                  *out_err = temp_err;
+                  compile_failed = true;
+                  break;
+                }
+              }
+              if (compile_failed) return false;
+
+              // Match against additionalProperties if not matched by either
+              if (!matched) {
                 if (additional_props_rule == -2) {
                   out_err->type = Jsonv_AdditionalProperties_error;
                   out_err->path = new_path ? new_path : path;
@@ -655,6 +722,7 @@ bool validate_bytecode(
           }
         }
         break;
+        /*#endregion*/
       }
 
       case OP_PROPERTY_NAMES: {
