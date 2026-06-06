@@ -164,6 +164,24 @@ TIMED_TEST(T, multiple_of_validation, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, exclusive_numeric_boundaries, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\"type\": \"number\", \"exclusiveMinimum\": 10.5, \"exclusiveMaximum\": 20.5}";
+
+  cr_expect(run_validation(schema, "15.0", &err));
+  cr_expect(run_validation(schema, "10.6", &err));
+  cr_expect(run_validation(schema, "20.4", &err));
+
+  cr_expect(!run_validation(schema, "10.5", &err));
+  cr_expect_eq(err.type, Jsonv_ExclusiveMinimum_error);
+
+  cr_expect(!run_validation(schema, "20.5", &err));
+  cr_expect_eq(err.type, Jsonv_ExclusiveMaximum_error);
+/*#endregion*/
+END_TIMED_TEST
+
 TIMED_TEST(T, string_lengths, init, fini)
 /*#region*/
   E err = {0};

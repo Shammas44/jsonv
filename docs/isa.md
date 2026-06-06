@@ -212,3 +212,28 @@ Asserts that a numeric value is a multiple of a given divisor.
 * **Format**: `[0x0C] [8 bytes divisor]` (9 bytes)
 * **VM Semantics**: If the current data node is a number, the VM asserts that the number is an integer multiple of `divisor` (within a floating-point tolerance of $10^{-9}$). If not, validation aborts with a `Jsonv_MultipleOf_error`. Non-numeric data nodes ignore this instruction.
 
+---
+
+### 3.D OP_EXCLUSIVE_MINIMUM (0x0D)
+Asserts numeric values are strictly greater than a lower bound.
+```
++---------------------------+---------------------------------+
+| OP_EXCLUSIVE_MINIMUM(0x0D)|     min_val (double)            |
++---------------------------+---------------------------------+
+```
+* **Format**: `[0x0D] [8 bytes min_val]` (9 bytes)
+* **VM Semantics**: If the current data node is a number and its value is $\le \text{min\_val}$, validation aborts with a `Jsonv_ExclusiveMinimum_error`. Non-numeric nodes ignore this instruction.
+
+---
+
+### 3.E OP_EXCLUSIVE_MAXIMUM (0x0E)
+Asserts numeric values are strictly less than an upper bound.
+```
++---------------------------+---------------------------------+
+| OP_EXCLUSIVE_MAXIMUM(0x0E)|     max_val (double)            |
++---------------------------+---------------------------------+
+```
+* **Format**: `[0x0E] [8 bytes max_val]` (9 bytes)
+* **VM Semantics**: If the current data node is a number and its value is $\ge \text{max\_val}$, validation aborts with a `Jsonv_ExclusiveMaximum_error`. Non-numeric nodes ignore this instruction.
+
+

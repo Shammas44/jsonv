@@ -196,6 +196,34 @@ bool validate_bytecode(
         break;
       }
 
+      case OP_EXCLUSIVE_MINIMUM: {
+        double min_val = read_double(&pc);
+        if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
+          double num = node->token.value.number;
+          if (num <= min_val) {
+            out_err->type = Jsonv_ExclusiveMinimum_error;
+            out_err->path = path;
+            snprintf(out_err->description, sizeof(out_err->description), "Value too small, expected > %.2f, got %.2f.", min_val, num);
+            return false;
+          }
+        }
+        break;
+      }
+
+      case OP_EXCLUSIVE_MAXIMUM: {
+        double max_val = read_double(&pc);
+        if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
+          double num = node->token.value.number;
+          if (num >= max_val) {
+            out_err->type = Jsonv_ExclusiveMaximum_error;
+            out_err->path = path;
+            snprintf(out_err->description, sizeof(out_err->description), "Value too large, expected < %.2f, got %.2f.", max_val, num);
+            return false;
+          }
+        }
+        break;
+      }
+
       case OP_MIN_LENGTH: {
         int32_t min_len = read_int32(&pc);
         if (node->type == AST_LEAF && node->token.type == T_STRING) {
