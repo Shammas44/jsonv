@@ -366,4 +366,23 @@ TIMED_TEST(T, contains_validation, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, not_validation, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\"not\": {\"type\": \"integer\"}}";
+
+  // Values that are NOT integers
+  cr_expect(run_validation(schema, "\"hello\"", &err));
+  cr_expect(run_validation(schema, "true", &err));
+  cr_expect(run_validation(schema, "123.45", &err));
+  cr_expect(run_validation(schema, "null", &err));
+
+  // Values that ARE integers (should fail)
+  cr_expect(!run_validation(schema, "123", &err));
+  cr_expect_eq(err.type, Jsonv_Not_error);
+/*#endregion*/
+END_TIMED_TEST
+
+
 

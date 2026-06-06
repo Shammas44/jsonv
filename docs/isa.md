@@ -296,6 +296,19 @@ Asserts that at least one element in an array matches the subschema.
 * **Format**: `[0x13] [4 bytes offset]` (5 bytes)
 * **VM Semantics**: If the current data node is an array, the interpreter loops through all children elements and recursively executes `validate_bytecode` using the target `offset`. If at least one element passes, the validation is successful. If no element passes or the array is empty, validation aborts with a `Jsonv_Contains_error`. Non-array nodes ignore this instruction.
 
+---
+
+### 3.K OP_NOT (0x14)
+Asserts that the data instance does not validate against the subschema.
+```
++---------------+---------------------------+
+|  OP_NOT(0x14) |     offset (uint32_t)     |
++---------------+---------------------------+
+```
+* **Format**: `[0x14] [4 bytes offset]` (5 bytes)
+* **VM Semantics**: The interpreter recursively validates the current data node against the subschema at the absolute bytecode `offset`. If the subschema validation returns `true` (validates successfully), validation aborts with a `Jsonv_Not_error`. If it returns `false`, validation succeeds.
+
+
 
 
 

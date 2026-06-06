@@ -57,7 +57,7 @@ These relate to requiring the presence of certain properties based on others:
 These keywords define how subschemas are applied to the data instance.
 
 - [x] `type`: Defines the expected **data type**.
-- [ ] `not`: data must **NOT** be valid against the subschema defined here.
+- [x] `not`: data must **NOT** be valid against the subschema defined here.
 - [ ] `allOf`: data must be valid against **ALL** of the subschemas listed in the array.
 - [ ] `anyOf`: data must be valid against **ANY** of the subschemas listed in the array.
 - [ ] `oneOf`: data must be valid against **EXACTLY ONE** of the subschemas listed in the array.

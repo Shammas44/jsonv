@@ -710,6 +710,20 @@ bool validate_bytecode(
         /*#endregion*/
       }
 
+      case OP_NOT: {
+        /*#region*/
+        uint32_t not_offset = read_uint32(&pc);
+        E temp_err = {0};
+        if (validate_bytecode(ctx, pool, schema, not_offset, node_idx, path, &temp_err)) {
+          out_err->type = Jsonv_Not_error;
+          out_err->path = path;
+          snprintf(out_err->description, sizeof(out_err->description), "Value must not validate against subschema.");
+          return false;
+        }
+        break;
+        /*#endregion*/
+      }
+
       default:
         // Invalid opcode
         return false;
