@@ -360,3 +360,16 @@ Conditional application of subschemas.
     * If `else_offset` is not `(uint32_t)-1` (denoting absent `else` schema), recursively evaluates the subschema at `else_offset`. The outcome of this validation determines the overall outcome.
     * If `else_offset` is `(uint32_t)-1`, validation succeeds immediately.
 
+---
+
+### 3.P OP_PROPERTY_NAMES (0x19)
+Asserts that all property keys of an object validate against a subschema.
+```
++----------------------+--------------------------+
+| OP_PROPERTY_NAMES(0x19)|    offset (uint32_t)     |
++----------------------+--------------------------+
+```
+* **Format**: `[0x19] [4 bytes offset]` (5 bytes)
+* **VM Semantics**: If the current data node is an object, the VM iterates through all properties of the object and validates each property key string against the subschema at `offset`. If any key fails validation, validation aborts. Non-object data nodes ignore this instruction.
+
+

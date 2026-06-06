@@ -500,3 +500,29 @@ TIMED_TEST(T, if_then_else_validation, init, fini)
   cr_expect_eq(err.type, Jsonv_Type_error);
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, property_names_validation, init, fini)
+/*#region*/
+  E err = {0};
+
+  // Property names must be strings of length between 3 and 5 characters.
+  const char *schema = "{\n"
+                       "  \"propertyNames\": {\n"
+                       "    \"minLength\": 3,\n"
+                       "    \"maxLength\": 5\n"
+                       "  }\n"
+                       "}";
+
+  // Case 1: all property names have lengths between 3 and 5 -> passes
+  cr_expect(run_validation(schema, "{\"abc\": 1, \"hello\": 2}", &err));
+
+  // Case 2: a property name has length < 3 -> fails minLength
+  cr_expect(!run_validation(schema, "{\"ab\": 1, \"hello\": 2}", &err));
+  cr_expect_eq(err.type, Jsonv_MinLength_error);
+
+  // Case 3: a property name has length > 5 -> fails maxLength
+  cr_expect(!run_validation(schema, "{\"abc\": 1, \"longer\": 2}", &err));
+  cr_expect_eq(err.type, Jsonv_MaxLength_error);
+/*#endregion*/
+END_TIMED_TEST
+

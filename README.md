@@ -43,7 +43,7 @@ These keywords constrain the properties, size, and structure of object instances
 - [x] `properties`: An object where keys are property names and values are schemas.
 - [ ] `patternProperties`: Similar to `properties`, but keys are regular expressions.
 - [x] `additionalProperties`:  Defines the schema for any properties **not explicitly listed**.
-- [ ] `propertyNames`: The name of every property in the object must validate against this schema
+- [x] `propertyNames`: The name of every property in the object must validate against this schema
 
 ## Keyword Dependency Keywords
 

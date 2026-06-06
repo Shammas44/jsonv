@@ -657,6 +657,42 @@ bool validate_bytecode(
         break;
       }
 
+      case OP_PROPERTY_NAMES: {
+        /*#region*/
+        uint32_t sub_offset = read_uint32(&pc);
+        if (node->type == AST_OBJECT) {
+          int curr = node->first_child;
+          while (curr != -1) {
+            if (pool[curr].type != AST_SKIPPED) {
+              Token k = pool[curr].token;
+              const char *k_start = (const char *)k.value.string.start;
+              size_t k_len = k.value.string.length;
+
+              // Construct new path
+              size_t p_len = strlen(path);
+              size_t needed = p_len + k_len + 2;
+              char *new_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), needed);
+              if (new_path) {
+                if (p_len > 0) {
+                  snprintf(new_path, needed, "%s.%.*s", path, (int)k_len, k_start);
+                } else {
+                  snprintf(new_path, needed, "%.*s", (int)k_len, k_start);
+                }
+              }
+
+              if (!validate_bytecode(ctx, pool, schema, sub_offset, curr, new_path ? new_path : path, out_err)) {
+                return false;
+              }
+            }
+            int val_idx = pool[curr].next_sibling;
+            if (val_idx == -1) break;
+            curr = pool[val_idx].next_sibling;
+          }
+        }
+        break;
+        /*#endregion*/
+      }
+
       case OP_UNIQUE_ITEMS: {
         /*#region*/
         if (node->type == AST_ARRAY) {
