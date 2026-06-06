@@ -263,6 +263,23 @@ TIMED_TEST(T, object_constraints, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, property_count_constraints, init, fini)
+/*#region*/
+  E err = {0};
+
+  const char *schema = "{\"type\": \"object\", \"minProperties\": 2, \"maxProperties\": 3}";
+
+  cr_expect(run_validation(schema, "{\"a\": 1, \"b\": 2}", &err));
+  cr_expect(run_validation(schema, "{\"a\": 1, \"b\": 2, \"c\": 3}", &err));
+
+  cr_expect(!run_validation(schema, "{\"a\": 1}", &err));
+  cr_expect_eq(err.type, Jsonv_MinProperties_error);
+
+  cr_expect(!run_validation(schema, "{\"a\": 1, \"b\": 2, \"c\": 3, \"d\": 4}", &err));
+  cr_expect_eq(err.type, Jsonv_MaxProperties_error);
+/*#endregion*/
+END_TIMED_TEST
+
 TIMED_TEST(T, nested_schemas, init, fini)
 /*#region*/
   E err = {0};

@@ -248,5 +248,30 @@ Asserts that a string instance matches a regular expression.
 * **Format**: `[0x0F] [24 bytes pattern_token]` (25 bytes)
 * **VM Semantics**: If the current data node is a string, the VM compiles the regular expression in `pattern_token` using POSIX Extended Regular Expressions (`REG_EXTENDED`) and matches the string against it. If it does not match, validation aborts with a `Jsonv_Pattern_error`. If regex compilation fails, it aborts with a `Jsonv_Compile_Regexp_Failed`. Non-string nodes ignore this instruction.
 
+---
+
+### 3.G OP_MIN_PROPERTIES (0x10)
+Asserts that the number of properties in an object is greater than or equal to a minimum count.
+```
++---------------------+-------------------------------+
+| OP_MIN_PROPERTIES(0x10)|     min_props (int32_t)       |
++---------------------+-------------------------------+
+```
+* **Format**: `[0x10] [4 bytes min_props]` (5 bytes)
+* **VM Semantics**: If the current data node is an object and contains fewer than `min_props` properties, validation aborts with a `Jsonv_MinProperties_error`. Non-object nodes ignore this instruction.
+
+---
+
+### 3.H OP_MAX_PROPERTIES (0x11)
+Asserts that the number of properties in an object is less than or equal to a maximum count.
+```
++---------------------+-------------------------------+
+| OP_MAX_PROPERTIES(0x11)|     max_props (int32_t)       |
++---------------------+-------------------------------+
+```
+* **Format**: `[0x11] [4 bytes max_props]` (5 bytes)
+* **VM Semantics**: If the current data node is an object and contains more than `max_props` properties, validation aborts with a `Jsonv_MaxProperties_error`. Non-object nodes ignore this instruction.
+
+
 
 

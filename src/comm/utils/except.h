@@ -18,6 +18,8 @@ typedef enum {
   // object
   Jsonv_Type_error,
   Jsonv_AdditionalProperties_error,
+  Jsonv_MinProperties_error,
+  Jsonv_MaxProperties_error,
   // array
   Jsonv_MinItems_error,
   Jsonv_Required_error,

@@ -300,6 +300,52 @@ bool validate_bytecode(
         break;
       }
 
+      case OP_MIN_PROPERTIES: {
+        int32_t min_props = read_int32(&pc);
+        if (node->type == AST_OBJECT) {
+          int count = 0;
+          int curr = node->first_child;
+          while (curr != -1) {
+            if (pool[curr].type != AST_SKIPPED) {
+              count++;
+            }
+            int val_idx = pool[curr].next_sibling;
+            if (val_idx == -1) break;
+            curr = pool[val_idx].next_sibling;
+          }
+          if (count < min_props) {
+            out_err->type = Jsonv_MinProperties_error;
+            out_err->path = path;
+            snprintf(out_err->description, sizeof(out_err->description), "Object has too few properties, expected >= %d, got %d.", min_props, count);
+            return false;
+          }
+        }
+        break;
+      }
+
+      case OP_MAX_PROPERTIES: {
+        int32_t max_props = read_int32(&pc);
+        if (node->type == AST_OBJECT) {
+          int count = 0;
+          int curr = node->first_child;
+          while (curr != -1) {
+            if (pool[curr].type != AST_SKIPPED) {
+              count++;
+            }
+            int val_idx = pool[curr].next_sibling;
+            if (val_idx == -1) break;
+            curr = pool[val_idx].next_sibling;
+          }
+          if (count > max_props) {
+            out_err->type = Jsonv_MaxProperties_error;
+            out_err->path = path;
+            snprintf(out_err->description, sizeof(out_err->description), "Object has too many properties, expected <= %d, got %d.", max_props, count);
+            return false;
+          }
+        }
+        break;
+      }
+
       case OP_MIN_ITEMS: {
         int32_t min_items = read_int32(&pc);
         if (node->type == AST_ARRAY) {

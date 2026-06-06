@@ -139,6 +139,8 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   bool has_ex_min = false;
   bool has_ex_max = false;
   bool has_pattern = false;
+  bool has_min_props = false;
+  bool has_max_props = false;
 
   int key_idx = nodes[node_idx].first_child;
   while (key_idx != -1) {
@@ -159,6 +161,10 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
       has_ex_max = true;
     } else if (token_equals(key->token, "pattern")) {
       has_pattern = true;
+    } else if (token_equals(key->token, "minProperties")) {
+      has_min_props = true;
+    } else if (token_equals(key->token, "maxProperties")) {
+      has_max_props = true;
     } else if (token_equals(key->token, "minLength")) {
       has_min_len = true;
     } else if (token_equals(key->token, "maxLength")) {
@@ -210,6 +216,12 @@ static uint32_t calculate_schema_size(ASTNode *nodes, int node_idx, uint32_t *of
   }
   if (has_pattern) {
     own_size += 1 + sizeof(Token);
+  }
+  if (has_min_props) {
+    own_size += 1 + sizeof(int32_t);
+  }
+  if (has_max_props) {
+    own_size += 1 + sizeof(int32_t);
   }
   if (has_min_len) {
     own_size += 1 + sizeof(int32_t);
@@ -308,6 +320,10 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
   double ex_max_val = 0.0;
   bool has_pattern = false;
   Token pattern_token = {0};
+  bool has_min_props = false;
+  int32_t min_props = -1;
+  bool has_max_props = false;
+  int32_t max_props = -1;
   bool has_items = false;
   int items_val_idx = -1;
   int required_count = 0;
@@ -351,6 +367,12 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
     } else if (token_equals(key->token, "pattern")) {
       has_pattern = true;
       pattern_token = val->token;
+    } else if (token_equals(key->token, "minProperties")) {
+      has_min_props = true;
+      min_props = (int32_t)parse_number(val->token);
+    } else if (token_equals(key->token, "maxProperties")) {
+      has_max_props = true;
+      max_props = (int32_t)parse_number(val->token);
     } else if (token_equals(key->token, "minLength")) {
       has_min_len = true;
       min_len = (int32_t)parse_number(val->token);
@@ -417,6 +439,14 @@ static void serialize_schema_direct(ASTNode *nodes, int node_idx, const uint32_t
   if (has_pattern) {
     emit_byte(&pc, OP_PATTERN);
     emit_token(&pc, pattern_token);
+  }
+  if (has_min_props) {
+    emit_byte(&pc, OP_MIN_PROPERTIES);
+    emit_int32(&pc, min_props);
+  }
+  if (has_max_props) {
+    emit_byte(&pc, OP_MAX_PROPERTIES);
+    emit_int32(&pc, max_props);
   }
   if (has_min_len) {
     emit_byte(&pc, OP_MIN_LENGTH);
