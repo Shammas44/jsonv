@@ -179,6 +179,23 @@ bool validate_bytecode(
         break;
       }
 
+      case OP_MULTIPLE_OF: {
+        double mult_val = read_double(&pc);
+        if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
+          double num = node->token.value.number;
+          double quot = num / mult_val;
+          double diff = quot - (double)(int64_t)(quot + (quot > 0.0 ? 0.5 : -0.5));
+          if (diff < 0.0) diff = -diff;
+          if (diff > 1e-9) {
+            out_err->type = Jsonv_MultipleOf_error;
+            out_err->path = path;
+            snprintf(out_err->description, sizeof(out_err->description), "Value %g is not a multiple of %g.", num, mult_val);
+            return false;
+          }
+        }
+        break;
+      }
+
       case OP_MIN_LENGTH: {
         int32_t min_len = read_int32(&pc);
         if (node->type == AST_LEAF && node->token.type == T_STRING) {

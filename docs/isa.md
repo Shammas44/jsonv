@@ -199,3 +199,16 @@ Handles object property keys validation and additional properties enforcement.
      * If `add_offset == -2`, validation immediately aborts with `Jsonv_AdditionalProperties_error`.
      * If `add_offset >= 0`, recursively validates the value node against the subschema at the absolute bytecode `add_offset`.
      * If `add_offset == -1`, the property is allowed without validation.
+
+---
+
+### 3.C OP_MULTIPLE_OF (0x0C)
+Asserts that a numeric value is a multiple of a given divisor.
+```
++--------------------+------------------------------+
+| OP_MULTIPLE_OF(0x0C)|     divisor (double)         |
++--------------------+------------------------------+
+```
+* **Format**: `[0x0C] [8 bytes divisor]` (9 bytes)
+* **VM Semantics**: If the current data node is a number, the VM asserts that the number is an integer multiple of `divisor` (within a floating-point tolerance of $10^{-9}$). If not, validation aborts with a `Jsonv_MultipleOf_error`. Non-numeric data nodes ignore this instruction.
+

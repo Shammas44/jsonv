@@ -26,7 +26,8 @@ typedef enum {
   OP_MAX_ITEMS,
   OP_ITEMS,
   OP_REQUIRED,
-  OP_PROPERTIES
+  OP_PROPERTIES,
+  OP_MULTIPLE_OF
 } Opcode;
 
 uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_length);
