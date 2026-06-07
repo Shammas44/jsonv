@@ -6,6 +6,10 @@ extern const Except MALFORMED_JSON;
 
 void prescan(const char *s, size_t len, JsonEstimate *out) {
   /*#region*/
+  if (len > 0xFFFFFFFF) {
+    RAISE(MALFORMED_JSON);
+  }
+
   memset(out, 0, sizeof(*out));
 
   bool in_string = false;
