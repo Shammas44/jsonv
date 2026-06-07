@@ -190,7 +190,7 @@ Validates all elements in an array against a subschema.
 Asserts that specified object keys are present.
 ```
 +-----------------+--------------------+------------------------------------+
-|OP_REQUIRED(0x0A)|  count (uint32_t)  | StringRef keys[count] (8B each)   |
+|OP_REQUIRED(0x0A)|  count (uint32_t)  | StringRef keys[count] (8B each)    |
 +-----------------+--------------------+------------------------------------+
 ```
 * **Format**: `[0x0A] [4 bytes count] [count * 8 bytes StringRefs]` (1 + 4 + count * 8 bytes)

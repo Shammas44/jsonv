@@ -3,6 +3,7 @@
 #include "shape.h"
 #include "except.h"
 #include "utils.h"
+#include "schema.h"
 #include <criterion/criterion.h>
 #include <string.h>
 #include <stdbool.h>
@@ -598,6 +599,89 @@ TIMED_TEST(T, format_validation, init, fini)
   cr_expect_eq(err.type, Jsonv_Format_error);
   cr_expect(!run_validation(schema_dt, "\"2026-02-29T12:00:00Z\"", &err)); // invalid day for non-leap year
   cr_expect_eq(err.type, Jsonv_Format_error);
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, schema_match_validation, init, fini)
+/*#region*/
+  // 1. Positive Match
+  const char *schema1 = "{\"type\": \"string\", \"minLength\": 5}";
+  E err = {0};
+  Jsonv_Config config = {
+      .default_block_size = 1024,
+      .max_limit = 65536,
+      .shrink_at = 4096,
+      .max_depth = 10,
+      .max_values = 100,
+      .max_objects = 100,
+      .max_array = 100,
+      .max_string_bytes = 1000
+  };
+  Jsonv_Schema *compiled_schema = jsonv_schema_compile(schema_arena, (const unsigned char *)schema1, &config, &err);
+  cr_assert_not_null(compiled_schema);
+  cr_assert_not_null(compiled_schema->bytecode);
+  cr_assert_gt(compiled_schema->length, 0);
+
+  bool match = is_compiled_schema_match(
+      schema_arena,
+      schema1,
+      strlen(schema1),
+      compiled_schema->bytecode,
+      compiled_schema->length
+  );
+  cr_expect(match, "Exact schema match failed");
+
+  // 2. Positive Match with Formatting/Whitespace changes
+  const char *schema1_alt = "{\n  \"type\":   \"string\",\n  \"minLength\": 5\n}";
+  match = is_compiled_schema_match(
+      schema_arena,
+      schema1_alt,
+      strlen(schema1_alt),
+      compiled_schema->bytecode,
+      compiled_schema->length
+  );
+  cr_expect(match, "Schema match with whitespace changes failed");
+
+  // 3. Negative Match (different schema)
+  const char *schema2 = "{\"type\": \"string\", \"minLength\": 6}";
+  match = is_compiled_schema_match(
+      schema_arena,
+      schema2,
+      strlen(schema2),
+      compiled_schema->bytecode,
+      compiled_schema->length
+  );
+  cr_expect(!match, "Different schema matched unexpectedly");
+
+  // 4. Invalid Schema JSON (should return false)
+  const char *invalid_schema = "{\"type\": \"string\", \"minLength\": ";
+  match = is_compiled_schema_match(
+      schema_arena,
+      invalid_schema,
+      strlen(invalid_schema),
+      compiled_schema->bytecode,
+      compiled_schema->length
+  );
+  cr_expect(!match, "Invalid schema json matched or caused crash");
+
+  // 5. Null inputs handling
+  match = is_compiled_schema_match(
+      schema_arena,
+      NULL,
+      0,
+      compiled_schema->bytecode,
+      compiled_schema->length
+  );
+  cr_expect(!match, "NULL schema json matched unexpectedly");
+
+  match = is_compiled_schema_match(
+      schema_arena,
+      schema1,
+      strlen(schema1),
+      NULL,
+      0
+  );
+  cr_expect(!match, "NULL bytecode matched unexpectedly");
 /*#endregion*/
 END_TIMED_TEST
 

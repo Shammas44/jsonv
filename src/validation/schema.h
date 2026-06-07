@@ -52,5 +52,6 @@ typedef enum {
 } Opcode;
 
 uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int root_idx, int *out_length);
+bool is_compiled_schema_match(Jsonv_Arena *arena, const char *schema_json, size_t json_len, const uint8_t *bytecode, size_t bytecode_len);
 
 #endif

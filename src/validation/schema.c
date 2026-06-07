@@ -1,6 +1,8 @@
 #include "schema.h"
 #include "atom.h"
 #include "table.h"
+#include "prescan.h"
+#include "except.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -1081,6 +1083,51 @@ uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int r
 
   *out_length = (int)total_size;
   return bytecode;
+  /*#endregion*/
+}
+
+extern const Except MALFORMED_JSON;
+
+bool is_compiled_schema_match(
+    Jsonv_Arena *arena,
+    const char *schema_json,
+    size_t json_len,
+    const uint8_t *bytecode,
+    size_t bytecode_len
+) {
+  /*#region*/
+  if (!schema_json || !bytecode || json_len == 0) {
+    return false;
+  }
+
+  Lexer lexer;
+  lexer_init(&lexer, (const unsigned char *)schema_json, json_len);
+
+  Stack ast = {0};
+  set_t schema_set;
+  KeyTreePool schema_keytree;
+
+  bool result = false;
+
+  TRY {
+    JsonEstimate est = {0};
+    prescan(schema_json, json_len, &est);
+
+    parse_to_ast(arena, &lexer, json_len, est.value_count, &ast, &schema_keytree, &schema_set);
+
+    int compiled_len = 0;
+    uint8_t *compiled = compile_schema(arena, (ASTNode *)ast.data, stack_size(&ast), 0, &compiled_len);
+
+    if (compiled && (size_t)compiled_len == bytecode_len) {
+      result = (memcmp(compiled, bytecode, bytecode_len) == 0);
+    }
+  }
+  ELSE {
+    result = false;
+  }
+  END_TRY;
+
+  return result;
   /*#endregion*/
 }
 
