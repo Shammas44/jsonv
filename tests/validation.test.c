@@ -4,6 +4,8 @@
 #include "except.h"
 #include "utils.h"
 #include "schema.h"
+#include "mem.h"
+#include "atom.h"
 #include <criterion/criterion.h>
 #include <string.h>
 #include <stdbool.h>
@@ -684,4 +686,61 @@ TIMED_TEST(T, schema_match_validation, init, fini)
   cr_expect(!match, "NULL bytecode matched unexpectedly");
 /*#endregion*/
 END_TIMED_TEST
+
+static int custom_malloc_called = 0;
+static int custom_calloc_called = 0;
+
+static void *test_custom_malloc(size_t size) {
+  custom_malloc_called++;
+  return malloc(size);
+}
+
+static void *test_custom_calloc(size_t num, size_t size) {
+  custom_calloc_called++;
+  return calloc(num, size);
+}
+
+TIMED_TEST(T, internal_arena_and_custom_allocator, init, fini)
+/*#region*/
+  // 1. Check internal arena is used for atoms
+  size_t bytes_before = jsonv_get_internal_arena_used_bytes();
+  
+  // Create a new atom
+  const char *a1 = atom_string("unique_test_atom_12345");
+  cr_assert_not_null(a1);
+  
+  size_t bytes_after = jsonv_get_internal_arena_used_bytes();
+  cr_expect_gt(bytes_after, bytes_before, "Internal arena was not used for atom allocation");
+
+  // 2. Test Custom Allocator overrides
+  // Save original allocators
+  void *(*orig_malloc)(size_t) = jsonv_malloc;
+  void *(*orig_calloc)(size_t, size_t) = jsonv_calloc;
+
+  // Override with custom ones
+  jsonv_malloc = test_custom_malloc;
+  jsonv_calloc = test_custom_calloc;
+
+  custom_malloc_called = 0;
+  custom_calloc_called = 0;
+
+  // Allocate something standard (like a new Jsonv_Arena)
+  Jsonv_Arena *temp_arena = jsonv_arena_new(1024, 65536, 4096);
+  cr_assert_not_null(temp_arena);
+  cr_expect_gt(custom_malloc_called, 0, "Custom malloc was not called");
+
+  // Allocate something calling calloc
+  void *calloc_ptr = CALLOC(2, 8);
+  cr_assert_not_null(calloc_ptr);
+  cr_expect_gt(custom_calloc_called, 0, "Custom calloc was not called");
+  FREE(calloc_ptr);
+
+  jsonv_arena_destroy(temp_arena);
+
+  // Restore original allocators
+  jsonv_malloc = orig_malloc;
+  jsonv_calloc = orig_calloc;
+/*#endregion*/
+END_TIMED_TEST
+
 

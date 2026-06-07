@@ -1,6 +1,16 @@
 #include "table.h"
 #include "assert.h"
 #include "mem.h"
+#undef ALLOC
+#undef CALLOC
+#undef FREE
+#undef NEW
+#undef NEW0
+#define ALLOC(nbytes)             mem_alloc_internal((nbytes), __FILE__, __LINE__)
+#define CALLOC(count, nbytes)     mem_calloc_internal((count), (nbytes), __FILE__, __LINE__)
+#define NEW(p)                    ((p) = ALLOC((long)sizeof *(p)))
+#define NEW0(p)                   ((p) = CALLOC(1, (long)sizeof *(p)))
+#define FREE(ptr)                 ((void)(mem_free_internal((ptr), __FILE__, __LINE__), (ptr) = 0))
 #include <limits.h>
 #include <stddef.h>
 #define T Table

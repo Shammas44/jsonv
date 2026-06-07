@@ -1,6 +1,11 @@
 #ifndef _JSONV_MEM_INCLUDED
 #define _JSONV_MEM_INCLUDED
 #include "except.h"
+#include <stddef.h>
+
+extern void *(*jsonv_malloc)(size_t);
+extern void *(*jsonv_calloc)(size_t, size_t);
+
 extern const Except Mem_Failed;
 extern void *mem_alloc (long nbytes,
 	const char *file, int line);
@@ -10,6 +15,12 @@ extern void mem_free(void *ptr,
 	const char *file, int line);
 extern void *mem_resize(void *ptr, long nbytes,
 	const char *file, int line);
+
+extern void *mem_alloc_internal(long nbytes, const char *file, int line);
+extern void *mem_calloc_internal(long count, long nbytes, const char *file, int line);
+extern void mem_free_internal(void *ptr, const char *file, int line);
+extern size_t jsonv_get_internal_arena_used_bytes(void);
+
 #define ALLOC(nbytes) \
 	mem_alloc((nbytes), __FILE__, __LINE__)
 #define CALLOC(count, nbytes) \
