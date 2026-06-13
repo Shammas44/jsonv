@@ -226,3 +226,12 @@ int atom_length(const char *str) {
   return 0;
   /*#endregion*/
 }
+
+void atom_clear(void) {
+  /*#region*/
+  for (size_t i = 0; i < NELEMS(buckets); i++) {
+    buckets[i] = NULL;
+  }
+  /*#endregion*/
+}
+

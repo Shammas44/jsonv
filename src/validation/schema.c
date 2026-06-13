@@ -1155,3 +1155,17 @@ void print_token(Token t) {
   }
   /*#endregion*/
 }
+
+void jsonv_schema_clear_static_tables(void) {
+  /*#region*/
+  keyword_table = NULL;
+  type_table = NULL;
+  for (int i = 0; i < KWID_COUNT; i++) {
+    kw_atoms[i] = NULL;
+  }
+  for (size_t i = 0; i < TYPE_MAPPINGS_COUNT; i++) {
+    type_atoms[i] = NULL;
+  }
+  /*#endregion*/
+}
+

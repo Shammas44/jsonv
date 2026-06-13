@@ -742,4 +742,39 @@ TIMED_TEST(T, internal_arena_and_custom_allocator, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, free_all_data, init, fini)
+/*#region*/
+  // 1. Allocate something to populate arenas
+  const char *a1 = atom_string("test_free_all_atom_1");
+  cr_assert_not_null(a1);
+
+  // Set up global shape root
+  Jsonv_Shape *root = jsonv_shape_root();
+  cr_assert_not_null(root);
+
+  // Trigger keyword_table initialization
+  Jsonv_Error err;
+  Jsonv_Arena *schema_arena_temp = jsonv_arena_new(1024, 65536, 4096);
+  Jsonv_Schema *schema = jsonv_schema_compile(schema_arena_temp, (const unsigned char *)"{}", NULL, &err);
+  cr_assert_not_null(schema);
+  jsonv_arena_destroy(schema_arena_temp);
+
+  // Verify internal arena is active and has allocated bytes
+  size_t bytes = jsonv_get_internal_arena_used_bytes();
+  cr_expect_gt(bytes, 0, "Internal arena should have allocated bytes");
+
+  // Call free_all
+  jsonv_free_all();
+
+  // Verify internal arena was destroyed and is now 0 bytes
+  cr_expect_eq(jsonv_get_internal_arena_used_bytes(), 0, "Internal arena should be freed and 0 bytes");
+
+  // Verify next calls reinitialize everything properly without crash
+  const char *a2 = atom_string("test_free_all_atom_2");
+  cr_assert_not_null(a2);
+  cr_expect_gt(jsonv_get_internal_arena_used_bytes(), 0, "Internal arena should reinitialize");
+/*#endregion*/
+END_TIMED_TEST
+
+
 

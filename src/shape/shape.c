@@ -37,6 +37,7 @@ void jsonv_shape_clear_global_arena(void) {
     jsonv_arena_destroy(global_shape_arena);
     global_shape_arena = NULL;
   }
+  shape_root = NULL;
   pthread_mutex_unlock(&shape_mutex);
   /*#endregion*/
 }

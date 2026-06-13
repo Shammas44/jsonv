@@ -133,3 +133,20 @@ size_t jsonv_get_internal_arena_used_bytes(void) {
   return 0;
   /*#endregion*/
 }
+
+extern void jsonv_shape_clear_global_arena(void);
+extern void atom_clear(void);
+extern void jsonv_schema_clear_static_tables(void);
+
+void jsonv_free_all(void) {
+  /*#region*/
+  jsonv_schema_clear_static_tables();
+  atom_clear();
+  jsonv_shape_clear_global_arena();
+  if (jsonv_internal_arena) {
+    jsonv_arena_destroy(jsonv_internal_arena);
+    jsonv_internal_arena = NULL;
+  }
+  /*#endregion*/
+}
+
