@@ -1,4 +1,5 @@
 #include "validate_internal.h"
+#include "parser.h"
 
 static bool handle_fail(VMState *state) {
   /*#region*/

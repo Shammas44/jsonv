@@ -1,4 +1,5 @@
 #include "schema.h"
+#include "parser.h"
 #include "atom.h"
 #include "table.h"
 #include "prescan.h"

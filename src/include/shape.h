@@ -53,11 +53,16 @@ JSONV_API size_t jsonv_val_str_len(Jsonv_Value v);
 JSONV_API Jsonv_Obj* jsonv_obj_new(Jsonv_Arena *arena, Jsonv_Shape *root);
 JSONV_API void jsonv_obj_set(Jsonv_Arena *arena, Jsonv_Obj *o, const char *key, Jsonv_Value v);
 JSONV_API bool jsonv_obj_get(Jsonv_Obj *o, const char *key, Jsonv_Value *out);
+JSONV_API int jsonv_obj_length(const Jsonv_Obj *o);
+JSONV_API const char* jsonv_obj_key_at(const Jsonv_Obj *o, int index);
+JSONV_API Jsonv_Value jsonv_obj_val_at(const Jsonv_Obj *o, int index);
 
 // Public Array Operations
 JSONV_API Jsonv_Arr* jsonv_arr_new(Jsonv_Arena *arena);
 JSONV_API void jsonv_arr_set(Jsonv_Arena *arena, Jsonv_Arr *a, int index, Jsonv_Value v);
 JSONV_API bool jsonv_arr_get(Jsonv_Arr *a, int index, Jsonv_Value *out);
+JSONV_API int jsonv_arr_length(const Jsonv_Arr *a);
+JSONV_API Jsonv_Value jsonv_arr_val_at(const Jsonv_Arr *a, int index);
 
 // Public Shape Operations
 JSONV_API Jsonv_Shape* jsonv_shape_root(void);

@@ -188,3 +188,73 @@ EXCEPT(ARENA_LIMIT_REACHED) {
 END_TRY;
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, obj_and_arr_iteration_accessors, init, fini)
+/*#region*/
+  // 1. Object Iteration
+  const char *k_a = make_temp_lstr(arena, "a");
+  const char *k_b = make_temp_lstr(arena, "b");
+  const char *k_c = make_temp_lstr(arena, "c");
+
+  Jsonv_Obj *obj = jsonv_obj_new(arena, root);
+  cr_assert_not_null(obj);
+
+  jsonv_obj_set(arena, obj, k_a, jsonv_val_int(10));
+  jsonv_obj_set(arena, obj, k_b, jsonv_val_double(20.5));
+  jsonv_obj_set(arena, obj, k_c, jsonv_val_bool(true));
+
+  cr_expect_eq(jsonv_obj_length(obj), 3, "Object length should be 3");
+
+  // Verify key and value at index 0
+  const char *key0 = jsonv_obj_key_at(obj, 0);
+  cr_expect_str_eq(key0, "a");
+  Jsonv_Value val0 = jsonv_obj_val_at(obj, 0);
+  cr_expect_eq(val0.tag, JSONV_VAL_INT);
+  cr_expect_eq(val0.as.i, 10);
+
+  // Verify key and value at index 1
+  const char *key1 = jsonv_obj_key_at(obj, 1);
+  cr_expect_str_eq(key1, "b");
+  Jsonv_Value val1 = jsonv_obj_val_at(obj, 1);
+  cr_expect_eq(val1.tag, JSONV_VAL_DOUBLE);
+  cr_expect_float_eq(val1.as.d, 20.5, 1e-9);
+
+  // Verify key and value at index 2
+  const char *key2 = jsonv_obj_key_at(obj, 2);
+  cr_expect_str_eq(key2, "c");
+  Jsonv_Value val2 = jsonv_obj_val_at(obj, 2);
+  cr_expect_eq(val2.tag, JSONV_VAL_BOOLEAN);
+  cr_expect_eq(val2.as.boolean, true);
+
+  // Verify bounds/errors
+  cr_expect_null(jsonv_obj_key_at(obj, -1));
+  cr_expect_null(jsonv_obj_key_at(obj, 3));
+  cr_expect_eq(jsonv_obj_val_at(obj, -1).tag, JSONV_VAL_UNDEFINED);
+  cr_expect_eq(jsonv_obj_val_at(obj, 3).tag, JSONV_VAL_UNDEFINED);
+
+  // 2. Array Iteration
+  Jsonv_Arr *arr = jsonv_arr_new(arena);
+  cr_assert_not_null(arr);
+
+  jsonv_arr_set(arena, arr, 0, jsonv_val_str("hello"));
+  jsonv_arr_set(arena, arr, 1, jsonv_val_null());
+  jsonv_arr_set(arena, arr, 2, jsonv_val_int(42));
+
+  cr_expect_eq(jsonv_arr_length(arr), 3, "Array length should be 3");
+
+  Jsonv_Value item0 = jsonv_arr_val_at(arr, 0);
+  cr_expect_eq(item0.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(item0.as.p, "hello");
+
+  Jsonv_Value item1 = jsonv_arr_val_at(arr, 1);
+  cr_expect_eq(item1.tag, JSONV_VAL_NULL);
+
+  Jsonv_Value item2 = jsonv_arr_val_at(arr, 2);
+  cr_expect_eq(item2.tag, JSONV_VAL_INT);
+  cr_expect_eq(item2.as.i, 42);
+
+  // Verify bounds/errors
+  cr_expect_eq(jsonv_arr_val_at(arr, -1).tag, JSONV_VAL_UNDEFINED);
+  cr_expect_eq(jsonv_arr_val_at(arr, 3).tag, JSONV_VAL_UNDEFINED);
+/*#endregion*/
+END_TIMED_TEST

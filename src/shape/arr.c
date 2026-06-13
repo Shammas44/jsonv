@@ -135,3 +135,18 @@ int arr_get_refcount(const Jsonv_Arr *a) {
   return a ? a->refcount : 0;
   /*#endregion*/
 }
+
+int jsonv_arr_length(const Jsonv_Arr *a) {
+  /*#region*/
+  return a ? a->length : 0;
+  /*#endregion*/
+}
+
+Jsonv_Value jsonv_arr_val_at(const Jsonv_Arr *a, int index) {
+  /*#region*/
+  if (!a || index < 0 || index >= a->length || !a->items) {
+    return jsonv_val_undefined();
+  }
+  return a->items[index];
+  /*#endregion*/
+}

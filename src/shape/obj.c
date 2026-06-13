@@ -145,3 +145,27 @@ int obj_get_refcount(const Jsonv_Obj *o) {
   return o ? o->refcount : 0;
   /*#endregion*/
 }
+
+int jsonv_obj_length(const Jsonv_Obj *o) {
+  /*#region*/
+  return o && o->shape ? o->shape->slot_count : 0;
+  /*#endregion*/
+}
+
+const char* jsonv_obj_key_at(const Jsonv_Obj *o, int index) {
+  /*#region*/
+  if (!o || !o->shape || index < 0 || index >= o->shape->slot_count) {
+    return NULL;
+  }
+  return shape_get_key_at(o->shape, index);
+  /*#endregion*/
+}
+
+Jsonv_Value jsonv_obj_val_at(const Jsonv_Obj *o, int index) {
+  /*#region*/
+  if (!o || !o->shape || index < 0 || index >= o->shape->slot_count || !o->slots) {
+    return jsonv_val_undefined();
+  }
+  return o->slots[index];
+  /*#endregion*/
+}
