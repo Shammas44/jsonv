@@ -1,7 +1,6 @@
 #include "ctx.h"
 #include "arena.h"
-#include "shape.h"
-#include "except.h"
+#include "global.h"
 #include "utils.h"
 #include "schema.h"
 #include "mem.h"
@@ -41,7 +40,7 @@ static void fini(void) {
   /*#endregion*/
 }
 
-static bool run_validation(const char *schema_str, const char *data_str, E *out_err) {
+static bool run_validation(const char *schema_str, const char *data_str, Jsonv_Error *out_err) {
   /*#region*/
   char wrapped_schema[2048];
   snprintf(wrapped_schema, sizeof(wrapped_schema), "{\"properties\": {\"value\": %s}}", schema_str);
@@ -60,14 +59,14 @@ static bool run_validation(const char *schema_str, const char *data_str, E *out_
       .max_string_bytes = 1000
   };
 
-  E compile_err = {0};
+  Jsonv_Error compile_err = {0};
   Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, (const unsigned char *)wrapped_schema, &config, &compile_err);
   if (!schema) {
     if (out_err) *out_err = compile_err;
     return false;
   }
 
-  Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+  Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
   if (!ctx) return false;
 
   bool parse_ok = jsonv_ctx_parse_data(ctx, (const unsigned char *)wrapped_data);
@@ -95,7 +94,7 @@ static bool run_validation(const char *schema_str, const char *data_str, E *out_
 
 TIMED_TEST(T, type_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   // 1. String type
   cr_expect(run_validation("{\"type\": \"string\"}", "\"hello\"", &err));
@@ -135,7 +134,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, numeric_boundaries, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"type\": \"number\", \"minimum\": 10.5, \"maximum\": 20.5}";
 
@@ -153,7 +152,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, multiple_of_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"type\": \"number\", \"multipleOf\": 2.5}";
 
@@ -169,7 +168,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, exclusive_numeric_boundaries, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"type\": \"number\", \"exclusiveMinimum\": 10.5, \"exclusiveMaximum\": 20.5}";
 
@@ -187,7 +186,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, string_lengths, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"type\": \"string\", \"minLength\": 3, \"maxLength\": 5}";
 
@@ -204,7 +203,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, pattern_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"type\": \"string\", \"pattern\": \"^a[0-9]+b$\"}";
 
@@ -221,7 +220,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, array_items_constraints, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"type\": \"array\", \"minItems\": 2, \"maxItems\": 3, \"items\": {\"type\": \"integer\"}}";
 
@@ -241,7 +240,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, object_constraints, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\n"
                        "  \"type\": \"object\",\n"
@@ -268,7 +267,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, property_count_constraints, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"type\": \"object\", \"minProperties\": 2, \"maxProperties\": 3}";
 
@@ -285,7 +284,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, nested_schemas, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\n"
                        "  \"type\": \"object\",\n"
@@ -316,7 +315,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, unique_items_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"type\": \"array\", \"uniqueItems\": true}";
 
@@ -348,7 +347,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, contains_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"type\": \"array\", \"contains\": {\"type\": \"integer\", \"minimum\": 5}}";
 
@@ -371,7 +370,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, not_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\"not\": {\"type\": \"integer\"}}";
 
@@ -389,7 +388,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, all_of_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\n"
                        "  \"allOf\": [\n"
@@ -414,7 +413,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, any_of_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\n"
                        "  \"anyOf\": [\n"
@@ -443,7 +442,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, one_of_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   const char *schema = "{\n"
                        "  \"oneOf\": [\n"
@@ -472,7 +471,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, if_then_else_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   // If the value is an integer, it must be a multiple of 10.
   // Otherwise (if it's not an integer), it must be a string of maxLength 5.
@@ -506,7 +505,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, property_names_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   // Property names must be strings of length between 3 and 5 characters.
   const char *schema = "{\n"
@@ -531,7 +530,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, pattern_properties_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   // Property keys starting with "f" must be integers.
   // Property keys starting with "s" must be strings.
@@ -563,7 +562,7 @@ END_TIMED_TEST
 
 TIMED_TEST(T, format_validation, init, fini)
 /*#region*/
-  E err = {0};
+  Jsonv_Error err = {0};
 
   // 1. IPv4 Format
   const char *schema_ipv4 = "{\"format\": \"ipv4\"}";
@@ -608,7 +607,7 @@ TIMED_TEST(T, schema_match_validation, init, fini)
 /*#region*/
   // 1. Positive Match
   const char *schema1 = "{\"type\": \"string\", \"minLength\": 5}";
-  E err = {0};
+  Jsonv_Error err = {0};
   Jsonv_Config config = {
       .default_block_size = 1024,
       .max_limit = 65536,
@@ -714,12 +713,12 @@ TIMED_TEST(T, internal_arena_and_custom_allocator, init, fini)
 
   // 2. Test Custom Allocator overrides
   // Save original allocators
-  void *(*orig_malloc)(size_t) = jsonv_malloc;
-  void *(*orig_calloc)(size_t, size_t) = jsonv_calloc;
+  void *(*orig_malloc)(size_t) = g_jsonv_malloc;
+  void *(*orig_calloc)(size_t, size_t) = g_jsonv_calloc;
 
   // Override with custom ones
-  jsonv_malloc = test_custom_malloc;
-  jsonv_calloc = test_custom_calloc;
+  g_jsonv_malloc = test_custom_malloc;
+  g_jsonv_calloc = test_custom_calloc;
 
   custom_malloc_called = 0;
   custom_calloc_called = 0;
@@ -738,8 +737,8 @@ TIMED_TEST(T, internal_arena_and_custom_allocator, init, fini)
   jsonv_arena_destroy(temp_arena);
 
   // Restore original allocators
-  jsonv_malloc = orig_malloc;
-  jsonv_calloc = orig_calloc;
+  g_jsonv_malloc = orig_malloc;
+  g_jsonv_calloc = orig_calloc;
 /*#endregion*/
 END_TIMED_TEST
 

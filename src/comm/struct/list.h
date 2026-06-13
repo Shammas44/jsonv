@@ -1,5 +1,5 @@
-#ifndef _JSONV_LIST_INCLUDED
-#define _JSONV_LIST_INCLUDED
+#ifndef _JSONV_LIST_H
+#define _JSONV_LIST_H
 #define T List
 typedef struct T *T;
 struct T {

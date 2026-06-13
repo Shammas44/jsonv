@@ -1,5 +1,5 @@
-#ifndef _JSONV_TOKEN_H_INCLUDED
-#define _JSONV_TOKEN_H_INCLUDED
+#ifndef _JSONV_TOKEN_H
+#define _JSONV_TOKEN_H
 #include <stdio.h>
 
 typedef enum {

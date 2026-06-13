@@ -1,6 +1,6 @@
 #include "validate_internal.h"
 
-bool regex_matches_key(const char *k_start, size_t k_len, const char *pat_start, size_t pat_len, Jsonv_Context *ctx, const char *path, E *out_err) {
+bool regex_matches_key(const char *k_start, size_t k_len, const char *pat_start, size_t pat_len, Jsonv_Context *ctx, const char *path, Jsonv_Error *out_err) {
   /*#region*/
   char *pattern_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), pat_len + 1);
   if (!pattern_str) return false;

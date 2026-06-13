@@ -11,7 +11,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-extern Shape *_g_root;
 #define MARK_OBJECT_END 200
 #define MARK_ARRAY_END 201
 #define MAX_JSON_DEPTH 64

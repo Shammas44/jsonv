@@ -1,10 +1,8 @@
-#ifndef _JSONV_MEM_INCLUDED
-#define _JSONV_MEM_INCLUDED
+#ifndef _JSONV_MEM_H
+#define _JSONV_MEM_H
+
 #include "except.h"
 #include <stddef.h>
-
-extern void *(*jsonv_malloc)(size_t);
-extern void *(*jsonv_calloc)(size_t, size_t);
 
 extern const Except Mem_Failed;
 extern void *mem_alloc (long nbytes,

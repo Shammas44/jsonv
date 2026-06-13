@@ -1,5 +1,6 @@
 #ifndef _JSONV_ARENA_H
 #define _JSONV_ARENA_H
+
 #include "macro.h"
 #include <stdalign.h>
 #include <stddef.h>

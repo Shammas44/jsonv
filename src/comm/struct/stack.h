@@ -1,5 +1,5 @@
-#ifndef _JSONV_STACK_H_INCLUDED
-#define _JSONV_STACK_H_INCLUDED
+#ifndef _JSONV_STACK_H
+#define _JSONV_STACK_H
 #include <stdbool.h>
 #include <stdio.h>
 #define T Stack

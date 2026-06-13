@@ -1,5 +1,6 @@
 #ifndef _JSONV_CTX_H
 #define _JSONV_CTX_H
+
 #include "macro.h"
 #include "arena.h"
 #include "shape.h"
@@ -23,10 +24,13 @@ JSONV_API Jsonv_Schema* jsonv_schema_compile(
     Jsonv_Arena *schema_arena,
     const unsigned char *schema_json,
     const Jsonv_Config *config,
-    E *out_error
+    Jsonv_Error *out_error
 );
 
-JSONV_API Jsonv_Context* jsonv_ctx_create(
+
+JSONV_API bool jsonv_schema_compare(Jsonv_Arena *arena, const char *schema_json, size_t json_len, const uint8_t *bytecode, size_t bytecode_len);
+
+JSONV_API Jsonv_Context* jsonv_ctx_new(
     Jsonv_Arena *execution_arena,
     const Jsonv_Config *config
 );
@@ -46,7 +50,7 @@ JSONV_API bool jsonv_ctx_get_value(
     Jsonv_Value *out_value
 );
 
-JSONV_API const E* jsonv_ctx_get_error(const Jsonv_Context *ctx);
+JSONV_API const Jsonv_Error* jsonv_ctx_get_error(const Jsonv_Context *ctx);
 
 JSONV_API Jsonv_Arena* jsonv_ctx_arena(const Jsonv_Context *ctx);
 

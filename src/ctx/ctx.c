@@ -20,11 +20,20 @@ extern const Except MAXIMUM_VALUES_REACHED;
 extern const Except ARENA_LIMIT_REACHED;
 extern const Except MAXIMUM_TOKEN_BYTES_REACHED;
 
-
+static Jsonv_Config default_config = {
+  .default_block_size = 1024,
+  .max_limit = 65536,
+  .shrink_at = 4096,
+  .max_depth = 10,
+  .max_values = 100,
+  .max_objects = 100,
+  .max_array = 100,
+  .max_string_bytes = 1000
+};
 
 struct Jsonv_Context {
   Jsonv_Arena *execution_arena;
-  E last_error;
+  Jsonv_Error last_error;
   bool has_error;
   Jsonv_Config config;
 
@@ -39,14 +48,14 @@ Jsonv_Schema* jsonv_schema_compile(
     Jsonv_Arena *schema_arena,
     const unsigned char *schema_json,
     const Jsonv_Config *config,
-    E *out_error
+    Jsonv_Error *out_error
 ) {
   /*#region*/
   assert(schema_arena);
   assert(schema_json);
   
   if (out_error) {
-    memset(out_error, 0, sizeof(E));
+    memset(out_error, 0, sizeof(Jsonv_Error));
   }
   
   size_t json_length = strlen((char *)schema_json);
@@ -126,9 +135,15 @@ Jsonv_Schema* jsonv_schema_compile(
   /*#endregion*/
 }
 
+bool jsonv_schema_compare(Jsonv_Arena *arena, const char *schema_json, size_t json_len, const uint8_t *bytecode, size_t bytecode_len){
+  /*#region*/
+  return is_compiled_schema_match(arena,schema_json,json_len, bytecode, bytecode_len);
+  /*#endregion*/
+}
+
 /* ------------------- Context Operations ------------------- */
 
-Jsonv_Context* jsonv_ctx_create(
+Jsonv_Context* jsonv_ctx_new(
     Jsonv_Arena *execution_arena,
     const Jsonv_Config *config
 ) {
@@ -139,14 +154,14 @@ Jsonv_Context* jsonv_ctx_create(
   if (!ctx) return NULL;
   
   ctx->execution_arena = execution_arena;
-  memset(&ctx->last_error, 0, sizeof(E));
+  memset(&ctx->last_error, 0, sizeof(Jsonv_Error));
   ctx->has_error = false;
   
   // Set configurations
   if (config) {
     memcpy(&ctx->config, config, sizeof(Jsonv_Config));
   } else {
-    memset(&ctx->config, 0, sizeof(Jsonv_Config));
+    memcpy(&ctx->config, &default_config, sizeof(Jsonv_Config));
   }
   
   return ctx;
@@ -161,7 +176,7 @@ bool jsonv_ctx_parse_data(
   assert(ctx);
   assert(data_json);
   
-  memset(&ctx->last_error, 0, sizeof(E));
+  memset(&ctx->last_error, 0, sizeof(Jsonv_Error));
   ctx->has_error = false;
   
   size_t json_length = strlen((char *)data_json);
@@ -249,7 +264,7 @@ bool jsonv_ctx_validate(
   assert(ctx);
   assert(schema);
   
-  memset(&ctx->last_error, 0, sizeof(E));
+  memset(&ctx->last_error, 0, sizeof(Jsonv_Error));
   ctx->has_error = false;
 
   if (ctx->data.top < 0) {
@@ -304,7 +319,7 @@ bool jsonv_ctx_get_value(
   /*#endregion*/
 }
 
-const E* jsonv_ctx_get_error(const Jsonv_Context *ctx) {
+const Jsonv_Error* jsonv_ctx_get_error(const Jsonv_Context *ctx) {
   /*#region*/
   if (!ctx) return NULL;
   return &ctx->last_error;
@@ -321,7 +336,7 @@ Jsonv_Arena* jsonv_ctx_arena(const Jsonv_Context *ctx) {
 void jsonv_ctx_reset(Jsonv_Context *ctx) {
   /*#region*/
   if (!ctx) return;
-  memset(&ctx->last_error, 0, sizeof(E));
+  memset(&ctx->last_error, 0, sizeof(Jsonv_Error));
   ctx->has_error = false;
   // Reset the transient execution arena but preserve the Jsonv_Context allocation
   jsonv_arena_reset_to(ctx->execution_arena, sizeof(Jsonv_Context));

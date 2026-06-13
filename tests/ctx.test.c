@@ -4,7 +4,6 @@
 #include "except.h"
 #include "utils.h"
 #include <criterion/criterion.h>
-#include <string.h>
 
 #define T Ctx
 
@@ -61,7 +60,7 @@ Jsonv_Config config = {
 };
 
 const unsigned char *schema_json = (const unsigned char *)"{\"type\": \"object\", \"required\": [\"name\"]}";
-E err = {0};
+Jsonv_Error err = {0};
 
 Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, schema_json, &config, &err);
 cr_assert_not_null(schema, "Compiling valid schema should succeed");
@@ -83,7 +82,7 @@ Jsonv_Config config = {
 };
 
 const unsigned char *schema_json = (const unsigned char *)"{\"type\": \"object\", \"required\": "; // Malformed JSON
-E err = {0};
+Jsonv_Error err = {0};
 
 Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, schema_json, &config, &err);
 cr_assert_null(schema, "Compiling malformed schema should fail");
@@ -103,10 +102,10 @@ Jsonv_Config config = {
     .shrink_at = 4096
 };
 
-Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
 cr_assert_not_null(ctx, "Context creation should succeed");
 
-const E *err = jsonv_ctx_get_error(ctx);
+const Jsonv_Error *err = jsonv_ctx_get_error(ctx);
 cr_assert_not_null(err, "Initial error structure should be non-NULL");
 cr_expect_eq(err->type, 0, "Initial error type should be 0");
 
@@ -134,7 +133,7 @@ Jsonv_Config config = {
     .max_string_bytes = 1000
 };
 
-Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"name\": \"jsonv\", \"price\": 12.50}";
@@ -161,7 +160,7 @@ Jsonv_Config config = {
     .max_string_bytes = 1000
 };
 
-Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"name\": \"jsonv\", \"price\": }"; // Malformed JSON
@@ -169,7 +168,7 @@ const unsigned char *data_json = (const unsigned char *)"{\"name\": \"jsonv\", \
 bool success = jsonv_ctx_parse_data(ctx, data_json);
 cr_assert(!success, "Parsing invalid JSON payload should fail");
 
-const E *err = jsonv_ctx_get_error(ctx);
+const Jsonv_Error *err = jsonv_ctx_get_error(ctx);
 cr_expect_str_eq(err->description, "Malformed JSON", "Error description should indicate malformed JSON");
 /*#endregion*/
 END_TIMED_TEST
@@ -189,12 +188,12 @@ Jsonv_Config config = {
 
 // 1. Compile schema
 const unsigned char *schema_json = (const unsigned char *)"{\"type\": \"object\", \"required\": [\"name\"]}";
-E compile_err = {0};
+Jsonv_Error compile_err = {0};
 Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, schema_json, &config, &compile_err);
 cr_assert_not_null(schema);
 
 // 2. Create Context & Parse Data
-Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"name\": \"TradingEngine\"}";
@@ -222,12 +221,12 @@ Jsonv_Config config = {
 
 // 1. Compile schema (expects username to be string)
 const unsigned char *schema_json = (const unsigned char *)"{\"type\": \"object\", \"properties\": {\"username\": {\"type\": \"string\"}}}";
-E compile_err = {0};
+Jsonv_Error compile_err = {0};
 Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, schema_json, &config, &compile_err);
 cr_assert_not_null(schema);
 
 // 2. Create Context & Parse Data (contains double instead of string)
-Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"username\": 12345}";
@@ -238,7 +237,7 @@ cr_assert(parse_ok);
 bool valid = jsonv_ctx_validate(ctx, schema);
 cr_assert(!valid, "Validation of non-compliant payload should fail");
 
-const E *err = jsonv_ctx_get_error(ctx);
+const Jsonv_Error *err = jsonv_ctx_get_error(ctx);
 cr_assert_not_null(err);
 cr_expect_str_eq(err->path, "username", "Error path should point to the failing property");
 /*#endregion*/
@@ -267,7 +266,7 @@ Jsonv_Config config = {
 };
 
 TRY {
-  Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+  Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
   if (ctx) {
     // Large parsing request should quickly exceed 256 bytes and trigger OOM exception cleanly
     const unsigned char *large_json = (const unsigned char *)
@@ -297,7 +296,7 @@ Jsonv_Config config = {
     .max_string_bytes = 1000
 };
 
-Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"id\": 42, \"active\": true}";
@@ -325,11 +324,11 @@ Jsonv_Config config = {
 };
 
 const unsigned char *schema_json = (const unsigned char *)"{\"type\": \"object\", \"required\": [\"name\"]}";
-E compile_err = {0};
+Jsonv_Error compile_err = {0};
 Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, schema_json, &config, &compile_err);
 cr_assert_not_null(schema);
 
-Jsonv_Context *ctx = jsonv_ctx_create(execution_arena, &config);
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
 cr_assert_not_null(ctx);
 
 // 1. Invalid payload: Missing required field "name"

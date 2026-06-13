@@ -10,8 +10,8 @@
 
 const Except Mem_Failed = {"Allocation failed", Jsonv_Mem_Failed};
 
-void *(*jsonv_malloc)(size_t) = malloc;
-void *(*jsonv_calloc)(size_t, size_t) = calloc;
+void *(*g_jsonv_malloc)(size_t) = malloc;
+void *(*g_jsonv_calloc)(size_t, size_t) = calloc;
 
 static Jsonv_Arena *jsonv_internal_arena = NULL;
 static bool initializing_arena = false;
@@ -31,7 +31,7 @@ void *mem_alloc(long nbytes, const char *file, int line) {
   /*#region*/
   void *ptr;
   assert(nbytes > 0);
-  ptr = jsonv_malloc(nbytes);
+  ptr = g_jsonv_malloc(nbytes);
   if (ptr == NULL) {
     if (file == NULL)
       RAISE(Mem_Failed);
@@ -47,7 +47,7 @@ void *mem_calloc(long count, long nbytes, const char *file, int line) {
   void *ptr;
   assert(count > 0);
   assert(nbytes > 0);
-  ptr = jsonv_calloc(count, nbytes);
+  ptr = g_jsonv_calloc(count, nbytes);
   if (ptr == NULL) {
     if (file == NULL)
       RAISE(Mem_Failed);

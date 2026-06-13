@@ -16,8 +16,6 @@
 #define KB(x) 1024 * x
 #define MB(x) 1024 * 1024 * x
 
-Jsonv_Shape *_g_root = NULL;
-
 static char *colors[] = {
     "\x1b[30m", "\x1b[31m", "\x1b[32m", "\x1b[33m", "\x1b[34m",
     "\x1b[35m", "\x1b[36m", "\x1b[37m", "\x1b[0m",
@@ -126,14 +124,14 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
       .max_string_bytes = 1000
   };
 
-  E err = {0};
+  Jsonv_Error err = {0};
   Jsonv_Schema *schema = NULL;
   if (schema_json) {
     schema = jsonv_schema_compile(schema_arena, schema_json, &config, &err);
   }
 
   // Create the request-local context on the execution arena
-  Jsonv_Context *ctx = jsonv_ctx_create(arena, &config);
+  Jsonv_Context *ctx = jsonv_ctx_new(arena, &config);
   if (!ctx) {
     event_log(Red, "Error: Failed to create context");
     jsonv_arena_destroy(schema_arena);
@@ -149,7 +147,7 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
       if (valid) {
         event_log(Green, "Success: Payload is valid against the schema.");
       } else {
-        const E *v_err = jsonv_ctx_get_error(ctx);
+        const Jsonv_Error *v_err = jsonv_ctx_get_error(ctx);
         event_log(Red, "Validation Error %d: %s at %s", v_err->type, v_err->description, v_err->path ? v_err->path : "");
       }
     }
@@ -160,7 +158,7 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
       }
     }
   } else {
-    const E *p_err = jsonv_ctx_get_error(ctx);
+    const Jsonv_Error *p_err = jsonv_ctx_get_error(ctx);
     event_log(Red, "Parse Error %d: %s at %s", p_err->type, p_err->description, p_err->path ? p_err->path : "");
   }
 
@@ -199,7 +197,7 @@ void multiple_files(char *path, unsigned char *schema, Jsonv_Arena *arena) {
 int main() {
   /*#region*/
   Jsonv_Arena *arena = jsonv_arena_new(KB(4), MB(1), KB(12));
-  _g_root = jsonv_shape_root();
+  jsonv_shape_root();
   uint64_t start = now_ns();
   // for (int i = 0; i < 1000; i++) {
   // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold

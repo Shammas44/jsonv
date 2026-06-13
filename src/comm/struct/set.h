@@ -1,5 +1,5 @@
-#ifndef _JSONV_SET_H_INCLUDED
-#define _JSONV_SET_H_INCLUDED
+#ifndef _JSONV_SET_H
+#define _JSONV_SET_H
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>

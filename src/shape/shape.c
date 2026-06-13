@@ -16,6 +16,7 @@ static inline size_t lstr_len(const char *s) {
 
 static Jsonv_Arena *global_shape_arena = NULL;
 static pthread_mutex_t shape_mutex = PTHREAD_MUTEX_INITIALIZER;
+static Jsonv_Shape* shape_root = NULL;
 
 static void init_global_shape_arena(void) {
   /*#region*/
@@ -101,18 +102,22 @@ Shape* shape_find_transition(Shape* s, const char *key) {
 
 Shape* jsonv_shape_root(void) {
   /*#region*/
+  if(shape_root){
+    return shape_root;
+  }
   init_global_shape_arena();
   pthread_mutex_lock(&shape_mutex);
-  Shape* s = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
-  if (s) {
-    s->parent = NULL;
-    s->last_key = NULL;
-    s->last_slot = -1;
-    s->slot_count = 0;
-    s->transitions = NULL;
+
+  shape_root = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
+  if (shape_root) {
+    shape_root->parent = NULL;
+    shape_root->last_key = NULL;
+    shape_root->last_slot = -1;
+    shape_root->slot_count = 0;
+    shape_root->transitions = NULL;
   }
   pthread_mutex_unlock(&shape_mutex);
-  return s;
+  return shape_root;
   /*#endregion*/
 }
 

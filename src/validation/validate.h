@@ -1,19 +1,11 @@
-#ifndef _jsonv_UTILS_H_INCLUDED
-#define _jsonv_UTILS_H_INCLUDED
+#ifndef _JSONV_UTILS_H
+#define _JSONV_UTILS_H
 
-#include "except.h"
-#include "stack.h"
-#include "shape.h"
+#include "error.h"
 #include <stdbool.h>
 #include <stdint.h>
 
 #define JSONV_SCHEMA_IS_VALID -1
-
-typedef struct {
-  char description[100];
-  const char *path; // Arena-allocated or zero-copy read-only view
-  Jsonv_Except_Type type;
-} E;
 
 typedef struct Jsonv_Context Jsonv_Context;
 typedef struct ASTNode ASTNode;
@@ -30,7 +22,7 @@ bool validate_bytecode(
     uint32_t offset,
     int node_idx,
     const char *path,
-    E *out_err
+    Jsonv_Error *out_err
 );
 
 #endif

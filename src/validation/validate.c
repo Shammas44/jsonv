@@ -7,7 +7,7 @@ bool validate_bytecode(
     uint32_t offset,
     int node_idx,
     const char *path,
-    E *out_err
+    Jsonv_Error *out_err
 ) {
   /*#region*/
   if (offset >= schema->length) return true;

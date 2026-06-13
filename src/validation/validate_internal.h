@@ -2,10 +2,8 @@
 #define _JSONV_VALIDATE_INTERNAL_H
 
 #include "validate.h"
-#include "shape.internal.h"
 #include "schema.h"
 #include "ctx.h"
-#include "parser.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,7 +22,7 @@ typedef struct {
   const uint8_t *pc;
   int node_idx;
   const char *path;
-  E *out_err;
+  Jsonv_Error *out_err;
   const uint8_t *constant_pool;
 } VMState;
 
@@ -65,7 +63,7 @@ static inline double read_double(const uint8_t **pc) {
 }
 
 /* Helper functions defined in validate_helpers.c */
-bool regex_matches_key(const char *k_start, size_t k_len, const char *pat_start, size_t pat_len, Jsonv_Context *ctx, const char *path, E *out_err);
+bool regex_matches_key(const char *k_start, size_t k_len, const char *pat_start, size_t pat_len, Jsonv_Context *ctx, const char *path, Jsonv_Error *out_err);
 bool validate_ipv4(const char *s, size_t len);
 bool validate_email(const char *s, size_t len);
 bool validate_uuid(const char *s, size_t len);

@@ -1,5 +1,5 @@
-#ifndef _JSONV_TEST_UTILS_H_INCLUDED
-#define _JSONV_TEST_UTILS_H_INCLUDED
+#ifndef _JSONV_TEST_UTILS_H
+#define _JSONV_TEST_UTILS_H
 #include <criterion/criterion.h>
 #include <stdint.h>
 

@@ -1,7 +1,9 @@
 #ifndef _JSONV_SCHEMA_H_INCLUDED
 #define _JSONV_SCHEMA_H_INCLUDED
-#include "parser.h"
+
 #include "arena.h"
+#include "ast.h"
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef enum {

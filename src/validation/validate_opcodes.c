@@ -299,7 +299,7 @@ static bool handle_properties(VMState *state) {
         // Match against patternProperties
         bool compile_failed = false;
         for (uint32_t p = 0; p < pattern_prop_count; p++) {
-          E temp_err = {0};
+          Jsonv_Error temp_err = {0};
           if (regex_matches_key(k_start, k_len, pattern_props[p].key_start, pattern_props[p].key_len, state->ctx, state->path, &temp_err)) {
             matched = true;
             if (val_idx != -1) {
@@ -530,7 +530,7 @@ static bool handle_contains(VMState *state) {
     int child_idx = node->first_child;
     while (child_idx != -1) {
       if (state->pool[child_idx].type != AST_SKIPPED) {
-        E temp_err = {0};
+        Jsonv_Error temp_err = {0};
         if (validate_bytecode(state->ctx, state->pool, state->schema, contains_offset, child_idx, state->path, &temp_err)) {
           contains_valid = true;
           break;
@@ -552,7 +552,7 @@ static bool handle_contains(VMState *state) {
 static bool handle_not(VMState *state) {
   /*#region*/
   uint32_t not_offset = read_uint32(&state->pc);
-  E temp_err = {0};
+  Jsonv_Error temp_err = {0};
   if (validate_bytecode(state->ctx, state->pool, state->schema, not_offset, state->node_idx, state->path, &temp_err)) {
     state->out_err->type = Jsonv_Not_error;
     state->out_err->path = state->path;
@@ -570,7 +570,7 @@ static bool handle_all_of(VMState *state) {
   for (uint32_t i = 0; i < count; i++) {
     uint32_t sub_offset = read_uint32(&state->pc);
     if (all_valid) {
-      E temp_err = {0};
+      Jsonv_Error temp_err = {0};
       if (!validate_bytecode(state->ctx, state->pool, state->schema, sub_offset, state->node_idx, state->path, &temp_err)) {
         all_valid = false;
       }
@@ -593,7 +593,7 @@ static bool handle_any_of(VMState *state) {
   for (uint32_t i = 0; i < count; i++) {
     uint32_t sub_offset = read_uint32(&state->pc);
     if (!any_valid) {
-      E temp_err = {0};
+      Jsonv_Error temp_err = {0};
       if (validate_bytecode(state->ctx, state->pool, state->schema, sub_offset, state->node_idx, state->path, &temp_err)) {
         any_valid = true;
       }
@@ -615,7 +615,7 @@ static bool handle_one_of(VMState *state) {
   uint32_t valid_count = 0;
   for (uint32_t i = 0; i < count; i++) {
     uint32_t sub_offset = read_uint32(&state->pc);
-    E temp_err = {0};
+    Jsonv_Error temp_err = {0};
     if (validate_bytecode(state->ctx, state->pool, state->schema, sub_offset, state->node_idx, state->path, &temp_err)) {
       valid_count++;
     }
@@ -636,7 +636,7 @@ static bool handle_if_then_else(VMState *state) {
   uint32_t then_offset = read_uint32(&state->pc);
   uint32_t else_offset = read_uint32(&state->pc);
 
-  E temp_err = {0};
+  Jsonv_Error temp_err = {0};
   bool if_passed = validate_bytecode(state->ctx, state->pool, state->schema, if_offset, state->node_idx, state->path, &temp_err);
   if (if_passed) {
     if (then_offset != (uint32_t)-1) {
