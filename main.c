@@ -112,6 +112,10 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
   /*#region*/
   // Allocate a separate arena for the read-only schema compile phase
   Jsonv_Arena *schema_arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
+  if (!schema_arena) {
+    event_log(Red, "Error: Failed to create schema arena");
+    return;
+  }
   
   Jsonv_Config config = {
       .default_block_size = 1024,
@@ -130,8 +134,8 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
     schema = jsonv_schema_compile(schema_arena, schema_json, &config, &err);
   }
 
-  // Create the request-local context on the execution arena
-  Jsonv_Context *ctx = jsonv_ctx_new(arena, &config);
+  Jsonv_Arena_Error error = 0;
+  Jsonv_Context *ctx = jsonv_ctx_new(arena, &config, &error);
   if (!ctx) {
     event_log(Red, "Error: Failed to create context");
     jsonv_arena_destroy(schema_arena);
@@ -175,7 +179,7 @@ void single_file(char *path, unsigned char *schema, Jsonv_Arena *arena) {
     event_log(Red, "Error: Failed to read file %s", path);
     return;
   }
-  printf("input: %s\n", json_data);
+  printf("input: %.250s\n", json_data);
   single_payload(json_data, schema, arena);
   free(json_data);
   /*#endregion*/
@@ -197,32 +201,29 @@ void multiple_files(char *path, unsigned char *schema, Jsonv_Arena *arena) {
 int main() {
   /*#region*/
   Jsonv_Arena *arena = jsonv_arena_new(KB(4), MB(1), KB(12));
-  jsonv_shape_root();
   uint64_t start = now_ns();
   // for (int i = 0; i < 1000; i++) {
   // Default setup: 4KB blocks, 1MB limit, 12KB trim threshold
   size_t size;
   unsigned char *schema = file_read("./schema2.json", &size);
 
-  char data[] = "{"
-                "\"name\": \"iphone4\","
-                "\"price\": 2,"
-                "\"price\": 5,"
-                "\"price\": 7,"
-                "\"description\": {"
-                "   \"forbidden\": \"test\","
-                "   \"forbidden\": \"yo\","
-                "   \"name\": \"test\","
-                "   \"prices\": ["
-                "       4, 6"
-                "     ]"
-                "   }"
-                "}";
-  single_payload((unsigned char *)data, schema, arena);
+  // char data[] = "{"
+  //               "\"name\": \"iphone4\","
+  //               "\"price\": 2,"
+  //               "\"price\": 5,"
+  //               "\"price\": 7,"
+  //               "\"description\": {"
+  //               "   \"forbidden\": \"test\","
+  //               "   \"forbidden\": \"yo\","
+  //               "   \"name\": \"test\","
+  //               "   \"prices\": ["
+  //               "       4, 6"
+  //               "     ]"
+  //               "   }"
+  //               "}";
+  // single_payload((unsigned char *)data, schema, arena);
   // single_file("./seed_corpus/valid2.json", schema, arena);
-  // multiple_files("./output_fuzz/default/crashes", schema, arena);
-  jsonv_arena_destroy(arena);
-  free(schema);
+  multiple_files("./mismatches", schema, arena);
   // }
 
   uint64_t end = now_ns();
@@ -231,6 +232,10 @@ int main() {
   uint64_t milliseconds = (elapsed_ns % 1000000000ull) / 1000000ull;
   printf("time: %llu.%03llu s\n", (unsigned long long)seconds,
          (unsigned long long)milliseconds);
+
+  jsonv_arena_destroy(arena);
+  free(schema);
+  jsonv_free_all();
   return 0;
   /*#endregion*/
 }

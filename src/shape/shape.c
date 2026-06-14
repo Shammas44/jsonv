@@ -1,4 +1,5 @@
 #include "shape.internal.h"
+#include "arena.internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -16,14 +17,14 @@ static inline size_t lstr_len(const char *s) {
 
 static Jsonv_Arena *global_shape_arena = NULL;
 static pthread_mutex_t shape_mutex = PTHREAD_MUTEX_INITIALIZER;
-static Jsonv_Shape* shape_root = NULL;
+static Jsonv_Shape* root = NULL;
 
 static void init_global_shape_arena(void) {
   /*#region*/
   if (!global_shape_arena) {
     pthread_mutex_lock(&shape_mutex);
     if (!global_shape_arena) {
-      global_shape_arena = jsonv_arena_new(4096, 10 * 1024 * 1024, 1024 * 1024);
+      global_shape_arena = arena_new(4096, 10 * 1024 * 1024, 1024 * 1024);
     }
     pthread_mutex_unlock(&shape_mutex);
   }
@@ -37,7 +38,7 @@ void jsonv_shape_clear_global_arena(void) {
     jsonv_arena_destroy(global_shape_arena);
     global_shape_arena = NULL;
   }
-  shape_root = NULL;
+  root = NULL;
   pthread_mutex_unlock(&shape_mutex);
   /*#endregion*/
 }
@@ -101,24 +102,24 @@ Shape* shape_find_transition(Shape* s, const char *key) {
 
 /* ------------------- Shape ------------------- */
 
-Shape* jsonv_shape_root(void) {
+Shape* shape_root(void) {
   /*#region*/
-  if(shape_root){
-    return shape_root;
+  if(root){
+    return root;
   }
   init_global_shape_arena();
   pthread_mutex_lock(&shape_mutex);
 
-  shape_root = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
-  if (shape_root) {
-    shape_root->parent = NULL;
-    shape_root->last_key = NULL;
-    shape_root->last_slot = -1;
-    shape_root->slot_count = 0;
-    shape_root->transitions = NULL;
+  root = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
+  if (root) {
+    root->parent = NULL;
+    root->last_key = NULL;
+    root->last_slot = -1;
+    root->slot_count = 0;
+    root->transitions = NULL;
   }
   pthread_mutex_unlock(&shape_mutex);
-  return shape_root;
+  return root;
   /*#endregion*/
 }
 

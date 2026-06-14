@@ -1,13 +1,14 @@
 #include "validate_internal.h"
+#include "arena.internal.h"
 
 bool regex_matches_key(const char *k_start, size_t k_len, const char *pat_start, size_t pat_len, Jsonv_Context *ctx, const char *path, Jsonv_Error *out_err) {
   /*#region*/
-  char *pattern_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), pat_len + 1);
+  char *pattern_str = (char *)arena_alloc(jsonv_ctx_arena(ctx), pat_len + 1);
   if (!pattern_str) return false;
   memcpy(pattern_str, pat_start, pat_len);
   pattern_str[pat_len] = '\0';
 
-  char *target_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(ctx), k_len + 1);
+  char *target_str = (char *)arena_alloc(jsonv_ctx_arena(ctx), k_len + 1);
   if (!target_str) return false;
   memcpy(target_str, k_start, k_len);
   target_str[k_len] = '\0';

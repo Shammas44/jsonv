@@ -102,7 +102,8 @@ Jsonv_Config config = {
     .shrink_at = 4096
 };
 
-Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
+Jsonv_Arena_Error error = 0;
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config, &error);
 cr_assert_not_null(ctx, "Context creation should succeed");
 
 const Jsonv_Error *err = jsonv_ctx_get_error(ctx);
@@ -133,7 +134,8 @@ Jsonv_Config config = {
     .max_string_bytes = 1000
 };
 
-Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
+Jsonv_Arena_Error error = 0;
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config, &error);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"name\": \"jsonv\", \"price\": 12.50}";
@@ -160,7 +162,8 @@ Jsonv_Config config = {
     .max_string_bytes = 1000
 };
 
-Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
+Jsonv_Arena_Error error = 0;
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config ,&error);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"name\": \"jsonv\", \"price\": }"; // Malformed JSON
@@ -193,7 +196,8 @@ Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, schema_json, &config, 
 cr_assert_not_null(schema);
 
 // 2. Create Context & Parse Data
-Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
+Jsonv_Arena_Error error = 0;
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config, &error);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"name\": \"TradingEngine\"}";
@@ -226,7 +230,8 @@ Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, schema_json, &config, 
 cr_assert_not_null(schema);
 
 // 2. Create Context & Parse Data (contains double instead of string)
-Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
+Jsonv_Arena_Error error = 0;
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config, &error);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"username\": 12345}";
@@ -266,7 +271,8 @@ Jsonv_Config config = {
 };
 
 TRY {
-  Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
+  Jsonv_Arena_Error error = 0;
+  Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config, &error);
   if (ctx) {
     // Large parsing request should quickly exceed 256 bytes and trigger OOM exception cleanly
     const unsigned char *large_json = (const unsigned char *)
@@ -296,7 +302,8 @@ Jsonv_Config config = {
     .max_string_bytes = 1000
 };
 
-Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
+Jsonv_Arena_Error error = 0;
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config, &error);
 cr_assert_not_null(ctx);
 
 const unsigned char *data_json = (const unsigned char *)"{\"id\": 42, \"active\": true}";
@@ -328,7 +335,8 @@ Jsonv_Error compile_err = {0};
 Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, schema_json, &config, &compile_err);
 cr_assert_not_null(schema);
 
-Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
+Jsonv_Arena_Error error = 0;
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config, &error);
 cr_assert_not_null(ctx);
 
 // 1. Invalid payload: Missing required field "name"

@@ -10,6 +10,10 @@
 
 typedef struct Jsonv_ArenaBlock Jsonv_ArenaBlock;
 
+// =========== Arena allocation
+T *arena_new(size_t default_block_size, size_t max_limit, size_t shrink_at);
+void *arena_alloc(T *arena, size_t size);
+
 // =========== Arena getter
 Jsonv_ArenaBlock *arena_get_head(T *arena);
 Jsonv_ArenaBlock *arena_get_current(T *arena);

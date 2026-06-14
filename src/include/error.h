@@ -37,6 +37,8 @@ typedef enum {
   Jsonv_Maximum_Values_Reached,
   Jsonv_Mem_Failed,
   Jsonv_Arena_Limit_Reached,
+  Jsonv_Arena_Overflow,
+  Jsonv_Arena_Invalid_Arg,
   Jsonv_Maximum_Nested_Depth_Reached,
   Jsonv_Assertion_Failed,
   Jsonv_Compile_Regexp_Failed

@@ -110,13 +110,12 @@ static bool starts_with_object(const unsigned char *buf, size_t len) {
 static void dump_mismatch(const unsigned char *buf, size_t len, bool mine,
                           bool jq) {
   /*#region*/
-  static unsigned long counter = 0;
   char path[256];
 
   mkdir("mismatches", 0755);
 
-  snprintf(path, sizeof(path), "mismatches/mismatch_%d_%lu_%d_%d.json",
-           getpid(), counter++, mine, jq);
+  snprintf(path, sizeof(path), "mismatches/mismatch_%d_%d_%d.json",
+           getpid(), mine, jq);
 
   int fd = open(path, O_WRONLY | O_CREAT | O_EXCL, 0644);
   if (fd < 0)
@@ -138,16 +137,34 @@ int main(int argc, char *argv[]) {
   const char *input_filename = argv[1];
   size_t len = 0;
   unsigned char *json_data = NULL;
-  Jsonv_Context *ctx = NULL;
 
   json_data = read_file(input_filename, &len);
   assert(json_data);
 
-  Jsonv_Arena *arena = arena_create(4096, 1024 * 1024, 3 * 4096);
+  Jsonv_Arena *arena = jsonv_arena_new(4096, 1024 * 1024, 3 * 4096);
   assert(arena);
   bool jq;
 
-  bool mine = jsonv_ctx_prepare_data(&ctx, json_data, arena);
+  Jsonv_Config config = {
+      .default_block_size = 1024,
+      .max_limit = 65536,
+      .shrink_at = 4096,
+      .max_depth = 100,
+      .max_values = 100,
+      .max_objects = 100,
+      .max_array = 100,
+      .max_string_bytes = 1000
+  };
+
+  // Create the request-local context on the execution arena
+  Jsonv_Arena_Error error = 0;
+  Jsonv_Context *ctx = jsonv_ctx_new(arena, &config ,&error);
+  if(!ctx && error > 0){
+    return 0;
+  }
+
+  bool mine = jsonv_ctx_parse_data(ctx, json_data);
+
   if (!starts_with_object(json_data, len)) {
     jq = false;
   } else {
@@ -163,14 +180,11 @@ int main(int argc, char *argv[]) {
   /* Differential correctness check */
   if (mine != jq) {
     dump_mismatch(json_data, len, mine, jq);
-    abort(); // let AFL record & minimize
   }
 
-  if (ctx) {
-    jsonv_ctx_free(ctx);
-  }
   free(json_data);
   jsonv_arena_destroy(arena);
+  jsonv_free_all();
   return 0;
   /*#endregion*/
 }

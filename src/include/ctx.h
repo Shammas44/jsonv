@@ -32,7 +32,8 @@ JSONV_API bool jsonv_schema_compare(Jsonv_Arena *arena, const char *schema_json,
 
 JSONV_API Jsonv_Context* jsonv_ctx_new(
     Jsonv_Arena *execution_arena,
-    const Jsonv_Config *config
+    const Jsonv_Config *config,
+    Jsonv_Arena_Error *error
 );
 
 JSONV_API bool jsonv_ctx_parse_data(

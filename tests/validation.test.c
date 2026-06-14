@@ -5,6 +5,7 @@
 #include "schema.h"
 #include "mem.h"
 #include "atom.h"
+#include "shape.internal.h"
 #include <criterion/criterion.h>
 #include <string.h>
 #include <stdbool.h>
@@ -66,7 +67,8 @@ static bool run_validation(const char *schema_str, const char *data_str, Jsonv_E
     return false;
   }
 
-  Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config);
+  Jsonv_Arena_Error error = 0;
+  Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, &config, &error);
   if (!ctx) return false;
 
   bool parse_ok = jsonv_ctx_parse_data(ctx, (const unsigned char *)wrapped_data);
@@ -747,10 +749,6 @@ TIMED_TEST(T, free_all_data, init, fini)
   // 1. Allocate something to populate arenas
   const char *a1 = atom_string("test_free_all_atom_1");
   cr_assert_not_null(a1);
-
-  // Set up global shape root
-  Jsonv_Shape *root = jsonv_shape_root();
-  cr_assert_not_null(root);
 
   // Trigger keyword_table initialization
   Jsonv_Error err;

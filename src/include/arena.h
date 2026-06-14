@@ -6,6 +6,18 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// Error enumeration for arena operations
+typedef enum Jsonv_Arena_Error {
+    JSONV_ARENA_OK = 0,               // No error.
+    JSONV_ARENA_ERR_ALLOC,            // Memory allocation failed.
+    JSONV_ARENA_ERR_OVERFLOW,         // Size overflow detected during alignment.
+    JSONV_ARENA_ERR_LIMIT_REACHED,    // Requested allocation would exceed max_limit.
+    JSONV_ARENA_ERR_INVALID_ARG,      // NULL arena pointer or other invalid arguments.
+} Jsonv_Arena_Error;
+
+// Thread‑local variable holding last arena error
+extern _Thread_local Jsonv_Arena_Error jsonv_last_arena_error;
+
 #define T Jsonv_Arena
 #define JSONV_ARENA_ALIGNMENT 16
 

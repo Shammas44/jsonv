@@ -7,8 +7,12 @@
 const Except MALFORMED_JSON = {"Malformed JSON data", Jsonv_Malformed_json};
 const Except MAXIMUM_NESTED_DEPTH_REACHED = {
     "Maximum nested depth reached.", Jsonv_Maximum_Nested_Depth_Reached};
-const Except ARENA_LIMIT_REACHED = {"Arena limit reached.",
+const Except ARENA_LIMIT_REACHED = {"Arena requested allocation would exceed max_limit",
                                     Jsonv_Arena_Limit_Reached};
+const Except ARENA_OVERFLOW = {"Arena size overflow detected during alignment.",
+                                    Jsonv_Arena_Overflow};
+const Except ARENA_INVALID_ARG = {"NULL arena pointer or other invalid arguments.",
+                                    Jsonv_Arena_Invalid_Arg};
 const Except MAXIMUM_TOKEN_BYTES_REACHED = {"Maximum token's bytes reached.",
                                             Jsonv_Maximum_Token_Bytes_Reached};
 const Except MAXIMUM_ARRAY_REACHED = {"Maximum arrays reached.",

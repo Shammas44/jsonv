@@ -1,4 +1,5 @@
 #include "validate_internal.h"
+#include "arena.internal.h"
 #include "parser.h"
 
 static bool handle_fail(VMState *state) {
@@ -171,7 +172,9 @@ static bool handle_items(VMState *state) {
     for (int i = 0; child_idx != -1; i++) {
       char item_path[64];
       snprintf(item_path, sizeof(item_path), "%s[%d]", state->path, i);
-      char *arena_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), strlen(item_path) + 1);
+
+      // No need to handle null pointer, error is automatically raised
+      char *arena_path = (char *)arena_alloc(jsonv_ctx_arena(state->ctx), strlen(item_path) + 1);
       if (arena_path) {
         strcpy(arena_path, item_path);
       }
@@ -196,7 +199,7 @@ static bool handle_required(VMState *state) {
       const char *req_start = (const char *)(state->constant_pool + req_offset);
       
       // Make a temporary null-terminated string to look up
-      char *req_key = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), req_len + 1);
+      char *req_key = (char *)arena_alloc(jsonv_ctx_arena(state->ctx), req_len + 1);
       if (!req_key) return false;
       memcpy(req_key, req_start, req_len);
       req_key[req_len] = '\0';
@@ -227,7 +230,7 @@ static bool handle_properties(VMState *state) {
   if (prop_count <= 64) {
     props = stack_props;
   } else {
-    props = (DecodedPropertyRule *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), prop_count * sizeof(DecodedPropertyRule));
+    props = (DecodedPropertyRule *)arena_alloc(jsonv_ctx_arena(state->ctx), prop_count * sizeof(DecodedPropertyRule));
     if (!props) return false;
   }
 
@@ -243,7 +246,7 @@ static bool handle_properties(VMState *state) {
   if (pattern_prop_count <= 64) {
     pattern_props = stack_pattern_props;
   } else {
-    pattern_props = (DecodedPropertyRule *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), pattern_prop_count * sizeof(DecodedPropertyRule));
+    pattern_props = (DecodedPropertyRule *)arena_alloc(jsonv_ctx_arena(state->ctx), pattern_prop_count * sizeof(DecodedPropertyRule));
     if (!pattern_props) return false;
   }
 
@@ -273,7 +276,7 @@ static bool handle_properties(VMState *state) {
         // Construct new path for validation errors
         size_t p_len = strlen(state->path);
         size_t needed = p_len + k_len + 2;
-        char *new_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), needed);
+        char *new_path = (char *)arena_alloc(jsonv_ctx_arena(state->ctx), needed);
         if (new_path) {
           if (p_len > 0) {
             snprintf(new_path, needed, "%s.%.*s", state->path, (int)k_len, k_start);
@@ -411,12 +414,12 @@ static bool handle_pattern(VMState *state) {
       val_len -= 2;
     }
 
-    char *target_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), val_len + 1);
+    char *target_str = (char *)arena_alloc(jsonv_ctx_arena(state->ctx), val_len + 1);
     if (!target_str) return false;
     memcpy(target_str, val_start, val_len);
     target_str[val_len] = '\0';
 
-    char *pattern_str = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), pat_len + 1);
+    char *pattern_str = (char *)arena_alloc(jsonv_ctx_arena(state->ctx), pat_len + 1);
     if (!pattern_str) return false;
     memcpy(pattern_str, pat_start, pat_len);
     pattern_str[pat_len] = '\0';
@@ -675,7 +678,7 @@ static bool handle_property_names(VMState *state) {
         // Construct new path
         size_t p_len = strlen(state->path);
         size_t needed = p_len + k_len + 2;
-        char *new_path = (char *)jsonv_arena_alloc(jsonv_ctx_arena(state->ctx), needed);
+        char *new_path = (char *)arena_alloc(jsonv_ctx_arena(state->ctx), needed);
         if (new_path) {
           if (p_len > 0) {
             snprintf(new_path, needed, "%s.%.*s", state->path, (int)k_len, k_start);

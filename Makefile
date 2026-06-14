@@ -92,7 +92,7 @@ TEST_APP := $(BIN_DIR)/test_runner
 FUZZ_APP := $(BIN_DIR)/fuzz
 
 # --- Phony Targets ---
-.PHONY: all static shared test main_d run run_test clean install uninstall bear dirs main run_d fuzz run_fuzz run_docker_afl inspect
+.PHONY: all static shared test main_d run run_test clean install uninstall bear dirs main run_d fuzz run_fuzz start_afl build_afl clean_afl inspect
 
 # --- Main Targets ---
 all: static
@@ -204,10 +204,13 @@ resume_fuzz: $(FUZZ_APP)
 	@echo "Resume AFL++ Fuzzing. Use Ctrl+C to stop."
 	@afl-fuzz -i - -o output_fuzz -- $(FUZZ_APP) @@
 
-run_docker_afl:
-	@echo "Start AFL++ in docker"
+build_afl:
+	@echo "Build AFL++ in docker"
 	docker build -t afl-jq .
-	docker run -ti -v $(shell pwd):/src afl-jq
+
+start_afl:
+	@echo "Start AFL++ in docker (reusing container)"
+	@docker start -i afl-jq || docker run -ti --name afl-jq -v $(shell pwd):/src afl-jq
 
 inspect:
 	@echo "Inspect exposed symbols"
@@ -217,3 +220,7 @@ inspect:
 clean:
 	@echo "Clean targets"
 	@rm -rf $(BIN_DIR)
+
+clean_afl:
+	@echo "Removing AFL++ docker container"
+	@docker rm -f afl-jq || true

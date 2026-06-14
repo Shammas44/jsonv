@@ -1,5 +1,5 @@
 #include "shape.internal.h"
-#include "arena.h"
+#include "arena.internal.h"
 #include "except.h"
 #include "utils.h"
 #include <criterion/criterion.h>
@@ -18,7 +18,7 @@ static void init(void) {
   // Allocate arena with 1MB ceiling limit
   arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
   cr_assert_not_null(arena, "Arena allocation failed");
-  root = jsonv_shape_root();
+  root = shape_root();
   cr_assert_not_null(root, "Root shape allocation failed");
   /*#endregion*/
 }
@@ -39,7 +39,7 @@ static const char *make_temp_lstr(Jsonv_Arena *arena, const char *s) {
   /*#region*/
   size_t len = strlen(s);
   size_t total_size = sizeof(StringHeader) + len + 1;
-  StringHeader *header = (StringHeader *)jsonv_arena_alloc(arena, total_size);
+  StringHeader *header = (StringHeader *)arena_alloc(arena, total_size);
   cr_assert_not_null(header);
   header->length = (uint32_t)len;
   memcpy(header->data, s, len);
@@ -163,7 +163,7 @@ jsonv_arena_destroy(arena);
 arena = jsonv_arena_new(256, 512, 512);
 cr_assert_not_null(arena);
 
-root = jsonv_shape_root();
+root = shape_root();
 cr_assert_not_null(root);
 
 // Exceeding limit via rapid transition creation should fail cleanly/gracefully

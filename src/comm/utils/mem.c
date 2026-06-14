@@ -9,18 +9,35 @@
 #include <stdbool.h>
 
 const Except Mem_Failed = {"Allocation failed", Jsonv_Mem_Failed};
+extern const Except ARENA_LIMIT_REACHED;
+extern const Except ARENA_OVERFLOW;
+extern const Except ARENA_INVALID_ARG;
 
 void *(*g_jsonv_malloc)(size_t) = malloc;
 void *(*g_jsonv_calloc)(size_t, size_t) = calloc;
+void (*g_jsonv_free)(void*) = free;
 
 static Jsonv_Arena *jsonv_internal_arena = NULL;
 static bool initializing_arena = false;
 
-Jsonv_Arena *jsonv_get_internal_arena(void) {
+static Jsonv_Arena *get_internal_arena(void) {
   /*#region*/
   if (!jsonv_internal_arena && !initializing_arena) {
     initializing_arena = true;
     jsonv_internal_arena = jsonv_arena_new(65536, 128 * 1024 * 1024, 1024 * 1024);
+    switch (jsonv_last_arena_error) {
+      case JSONV_ARENA_OK:
+        break;
+      case JSONV_ARENA_ERR_ALLOC:
+        RAISE(Mem_Failed);
+      case JSONV_ARENA_ERR_OVERFLOW:
+        RAISE(ARENA_OVERFLOW);
+      case JSONV_ARENA_ERR_LIMIT_REACHED:
+        RAISE(ARENA_LIMIT_REACHED);
+      case JSONV_ARENA_ERR_INVALID_ARG:
+        RAISE(ARENA_INVALID_ARG);
+        break;
+    }
     initializing_arena = false;
   }
   return jsonv_internal_arena;
@@ -63,7 +80,7 @@ void mem_free(void *ptr, const char *file, int line) {
   (void)(file);
   (void)(line);
   if (ptr)
-    free(ptr);
+    g_jsonv_free(ptr);
   /*#endregion*/
 }
 
@@ -84,7 +101,7 @@ void *mem_resize(void *ptr, long nbytes, const char *file, int line) {
 
 void *mem_alloc_internal(long nbytes, const char *file, int line) {
   /*#region*/
-  Jsonv_Arena *arena = jsonv_get_internal_arena();
+  Jsonv_Arena *arena = get_internal_arena();
   if (!arena) {
     return mem_alloc(nbytes, file, line);
   }
@@ -101,7 +118,7 @@ void *mem_alloc_internal(long nbytes, const char *file, int line) {
 
 void *mem_calloc_internal(long count, long nbytes, const char *file, int line) {
   /*#region*/
-  Jsonv_Arena *arena = jsonv_get_internal_arena();
+  Jsonv_Arena *arena = get_internal_arena();
   if (!arena) {
     return mem_calloc(count, nbytes, file, line);
   }
@@ -141,7 +158,6 @@ extern void jsonv_schema_clear_static_tables(void);
 void jsonv_free_all(void) {
   /*#region*/
   jsonv_schema_clear_static_tables();
-  atom_clear();
   jsonv_shape_clear_global_arena();
   if (jsonv_internal_arena) {
     jsonv_arena_destroy(jsonv_internal_arena);

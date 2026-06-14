@@ -1,5 +1,6 @@
 #include "schema.h"
 #include "parser.h"
+#include "arena.internal.h"
 #include "atom.h"
 #include "table.h"
 #include "prescan.h"
@@ -1050,11 +1051,9 @@ uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int r
     return NULL;
   }
 
-  uint32_t *offsets = (uint32_t *)jsonv_arena_alloc(arena, ast_count * sizeof(uint32_t));
-  if (!offsets) {
-    *out_length = 0;
-    return NULL;
-  }
+  // No need to handle null pointer, error is automatically raised
+  uint32_t *offsets = (uint32_t *)arena_alloc(arena, ast_count * sizeof(uint32_t));
+
   for (int i = 0; i < ast_count; i++) {
     offsets[i] = (uint32_t)-1;
   }
@@ -1063,11 +1062,8 @@ uint8_t *compile_schema(Jsonv_Arena *arena, ASTNode *nodes, int ast_count, int r
   uint32_t code_size = calculate_schema_size(nodes, root_idx, offsets, sizeof(BytecodeHeader), &data_size);
   uint32_t total_size = sizeof(BytecodeHeader) + code_size + data_size;
 
-  uint8_t *bytecode = (uint8_t *)jsonv_arena_alloc(arena, total_size);
-  if (!bytecode) {
-    *out_length = 0;
-    return NULL;
-  }
+  // No need to handle null pointer, error is automatically raised
+  uint8_t *bytecode = (uint8_t *)arena_alloc(arena, total_size);
 
   BytecodeHeader header;
   header.magic = 0x4A535642;
@@ -1158,6 +1154,7 @@ void print_token(Token t) {
 
 void jsonv_schema_clear_static_tables(void) {
   /*#region*/
+  if(!keyword_table)return;
   keyword_table = NULL;
   type_table = NULL;
   for (int i = 0; i < KWID_COUNT; i++) {
@@ -1166,6 +1163,7 @@ void jsonv_schema_clear_static_tables(void) {
   for (size_t i = 0; i < TYPE_MAPPINGS_COUNT; i++) {
     type_atoms[i] = NULL;
   }
+  atom_clear();
   /*#endregion*/
 }
 

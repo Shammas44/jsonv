@@ -1,4 +1,5 @@
 #include "ctx.h"
+#include "arena.internal.h"
 #include "shape.internal.h"
 #include "parser.h"
 #include "set.h"
@@ -99,7 +100,7 @@ Jsonv_Schema* jsonv_schema_compile(
     }
 
     // 6. ALLOCATE SCHEMA OBJECT
-    Jsonv_Schema *schema = (Jsonv_Schema *)jsonv_arena_alloc(schema_arena, sizeof(Jsonv_Schema));
+    Jsonv_Schema *schema = (Jsonv_Schema *)arena_alloc(schema_arena, sizeof(Jsonv_Schema));
     if (!schema) return NULL;
     schema->bytecode = bytecode;
     schema->length = (uint32_t)bytecode_length;
@@ -145,13 +146,21 @@ bool jsonv_schema_compare(Jsonv_Arena *arena, const char *schema_json, size_t js
 
 Jsonv_Context* jsonv_ctx_new(
     Jsonv_Arena *execution_arena,
-    const Jsonv_Config *config
+    const Jsonv_Config *config,
+    Jsonv_Arena_Error *error
 ) {
   /*#region*/
-  if (!execution_arena) return NULL;
+  if (!execution_arena){
+    if(error) *error = JSONV_ARENA_ERR_INVALID_ARG;
+    return NULL;
+  } 
   
   Jsonv_Context *ctx = (Jsonv_Context *)jsonv_arena_alloc(execution_arena, sizeof(Jsonv_Context));
-  if (!ctx) return NULL;
+
+  if(!ctx){
+    if(error) *error = jsonv_last_arena_error;
+    return NULL;
+  }
   
   ctx->execution_arena = execution_arena;
   memset(&ctx->last_error, 0, sizeof(Jsonv_Error));
@@ -223,7 +232,6 @@ bool jsonv_ctx_parse_data(
     ctx->last_error.type = Jsonv_Arena_Limit_Reached;
     snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Arena Limit Reached");
     ctx->has_error = true;
-    RAISE(ARENA_LIMIT_REACHED);
   }
   EXCEPT(MAXIMUM_NESTED_DEPTH_REACHED) {
     ctx->last_error.type = Jsonv_Maximum_Nested_Depth_Reached;
@@ -297,7 +305,7 @@ bool jsonv_ctx_get_value(
   
   TRY {
     ASTNode *pool = (ASTNode *)ctx->data.data;
-    Shape *exe_root = jsonv_shape_root();
+    Shape *exe_root = shape_root();
     if (!exe_root) return false;
     *out_value = ast_to_value(pool, &ctx->data_keytree, 0, exe_root, ctx->execution_arena);
     return true;
@@ -311,7 +319,6 @@ bool jsonv_ctx_get_value(
     ctx->last_error.type = Jsonv_Arena_Limit_Reached;
     snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Arena Limit Reached");
     ctx->has_error = true;
-    RAISE(ARENA_LIMIT_REACHED);
   }
   END_TRY;
   

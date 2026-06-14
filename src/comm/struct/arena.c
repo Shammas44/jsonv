@@ -1,6 +1,10 @@
 #include "arena.internal.h"
 #include "assert.h"
 #include "mem.h"
+#include <stdint.h>
+
+// Thread‑local variable holding the last arena error
+_Thread_local Jsonv_Arena_Error jsonv_last_arena_error = JSONV_ARENA_OK;
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,6 +29,8 @@ typedef struct Jsonv_Arena {
 } Jsonv_Arena;
 
 extern const Except ARENA_LIMIT_REACHED;
+extern const Except ARENA_OVERFLOW;
+extern const Except ARENA_INVALID_ARG;
 
 static size_t align_up(size_t size) {
   /*#region*/
@@ -53,11 +59,13 @@ static Jsonv_ArenaBlock *arena_create_block(size_t capacity) {
 }
 
 Jsonv_Arena *jsonv_arena_new(size_t default_block_size, size_t max_limit,
-                       size_t shrink_at) {
+                             size_t shrink_at) {
   /*#region*/
   Jsonv_Arena *arena = ALLOC(sizeof(Jsonv_Arena));
-  if (!arena)
+  if (!arena) {
+    jsonv_last_arena_error = JSONV_ARENA_ERR_ALLOC;
     return NULL;
+  }
 
   arena->default_block_size = default_block_size;
   arena->max_limit = max_limit;
@@ -66,30 +74,60 @@ Jsonv_Arena *jsonv_arena_new(size_t default_block_size, size_t max_limit,
   // Safe check for initial ceiling limits
   if (default_block_size > SIZE_MAX - sizeof(Jsonv_ArenaBlock)) {
     FREE(arena);
+    jsonv_last_arena_error = JSONV_ARENA_ERR_OVERFLOW;
     return NULL;
   }
   size_t first_block_size = sizeof(Jsonv_ArenaBlock) + default_block_size;
   if (first_block_size > max_limit) {
     FREE(arena);
+    jsonv_last_arena_error = JSONV_ARENA_ERR_LIMIT_REACHED;
     return NULL;
   }
 
   arena->head = arena_create_block(default_block_size);
   if (!arena->head) {
     FREE(arena);
+    jsonv_last_arena_error = JSONV_ARENA_ERR_ALLOC;
     return NULL;
   }
 
   arena->current = arena->head;
   arena->total_reserved = first_block_size;
+  jsonv_last_arena_error = JSONV_ARENA_OK;
+  return arena;
+  /*#endregion*/
+}
+
+Jsonv_Arena *arena_new(size_t default_block_size, size_t max_limit,
+                       size_t shrink_at) {
+  /*#region*/
+  Jsonv_Arena *arena = jsonv_arena_new(default_block_size, max_limit, shrink_at);
+  switch (jsonv_last_arena_error) {
+    case JSONV_ARENA_OK:
+      break;
+    case JSONV_ARENA_ERR_ALLOC:
+      RAISE(Mem_Failed);
+    case JSONV_ARENA_ERR_OVERFLOW:
+      RAISE(ARENA_OVERFLOW);
+    case JSONV_ARENA_ERR_LIMIT_REACHED:
+      RAISE(ARENA_LIMIT_REACHED);
+    case JSONV_ARENA_ERR_INVALID_ARG:
+      RAISE(ARENA_INVALID_ARG);
+      break;
+  }
   return arena;
   /*#endregion*/
 }
 
 void *jsonv_arena_alloc(Jsonv_Arena *arena, size_t size) {
   /*#region*/
+  if (!arena) {
+    jsonv_last_arena_error = JSONV_ARENA_ERR_INVALID_ARG;
+    return NULL;
+  }
   size_t aligned_size = align_up(size);
   if (aligned_size == 0 && size > 0) {
+    jsonv_last_arena_error = JSONV_ARENA_ERR_OVERFLOW;
     return NULL; // Overflow detected
   }
 
@@ -98,6 +136,7 @@ void *jsonv_arena_alloc(Jsonv_Arena *arena, size_t size) {
       arena->current->used <= arena->current->capacity - aligned_size) {
     void *ptr = arena->current->data + arena->current->used;
     arena->current->used += aligned_size;
+    jsonv_last_arena_error = JSONV_ARENA_OK;
     return ptr;
   }
 
@@ -108,33 +147,35 @@ void *jsonv_arena_alloc(Jsonv_Arena *arena, size_t size) {
   }
 
   if (new_capacity > SIZE_MAX - sizeof(Jsonv_ArenaBlock)) {
+    jsonv_last_arena_error = JSONV_ARENA_ERR_OVERFLOW;
     return NULL;
   }
   size_t block_struct_size = sizeof(Jsonv_ArenaBlock) + new_capacity;
 
   // 3. Security Hard Limit Check (protects against addition overflows)
   if (arena->total_reserved > arena->max_limit - block_struct_size) {
-    RAISE(ARENA_LIMIT_REACHED);
+    jsonv_last_arena_error = JSONV_ARENA_ERR_LIMIT_REACHED;
     return NULL;
   }
 
   // 4. Recycle or Create
   if (arena->current->next == NULL) {
     Jsonv_ArenaBlock *new_block = arena_create_block(new_capacity);
-    if (!new_block)
+    if (!new_block) {
+      jsonv_last_arena_error = JSONV_ARENA_ERR_ALLOC;
       return NULL;
-
+    }
     arena->current->next = new_block;
     arena->total_reserved += block_struct_size;
   } else {
     // Reuse existing block (check if it fits)
     if (arena->current->next->capacity < aligned_size) {
-      // OPTIMIZATION: Non-destructive insert.
-      // We insert the larger block and preserve the downstream chain.
+      // OPTIMIZATION: Non‑destructive insert.
       Jsonv_ArenaBlock *new_block = arena_create_block(new_capacity);
-      if (!new_block)
+      if (!new_block) {
+        jsonv_last_arena_error = JSONV_ARENA_ERR_ALLOC;
         return NULL;
-
+      }
       new_block->next = arena->current->next;
       arena->current->next = new_block;
       arena->total_reserved += block_struct_size;
@@ -145,18 +186,49 @@ void *jsonv_arena_alloc(Jsonv_Arena *arena, size_t size) {
   arena->current = arena->current->next;
   void *ptr = arena->current->data;
   arena->current->used = aligned_size;
+  jsonv_last_arena_error = JSONV_ARENA_OK;
+  return ptr;
+  /*#endregion*/
+}
+
+void *arena_alloc(Jsonv_Arena *arena, size_t size) {
+  /*#region*/
+  void * ptr = jsonv_arena_alloc(arena, size);
+  switch (jsonv_last_arena_error) {
+    case JSONV_ARENA_OK:
+      break;
+    case JSONV_ARENA_ERR_ALLOC:
+      RAISE(Mem_Failed);
+    case JSONV_ARENA_ERR_OVERFLOW:
+      RAISE(ARENA_OVERFLOW);
+    case JSONV_ARENA_ERR_LIMIT_REACHED:
+      RAISE(ARENA_LIMIT_REACHED);
+    case JSONV_ARENA_ERR_INVALID_ARG:
+      RAISE(ARENA_INVALID_ARG);
+      break;
+  }
   return ptr;
   /*#endregion*/
 }
 
 void jsonv_arena_reset(Jsonv_Arena *arena) {
   /*#region*/
+  if (!arena) {
+    jsonv_last_arena_error = JSONV_ARENA_ERR_INVALID_ARG;
+    return;
+  }
+  jsonv_last_arena_error = JSONV_ARENA_OK;
   jsonv_arena_reset_to(arena, 0);
   /*#endregion*/
 }
 
 void jsonv_arena_reset_to(Jsonv_Arena *arena, size_t keep_size) {
   /*#region*/
+  if (!arena) {
+    jsonv_last_arena_error = JSONV_ARENA_ERR_INVALID_ARG;
+    return;
+  }
+  jsonv_last_arena_error = JSONV_ARENA_OK;
   // SMART TRIM LOGIC
   if (arena->total_reserved > arena->shrink_at) {
     // 1. Keep the HEAD, free the rest using safe FREE macro
@@ -186,9 +258,11 @@ void jsonv_arena_reset_to(Jsonv_Arena *arena, size_t keep_size) {
 
 void jsonv_arena_destroy(Jsonv_Arena *arena) {
   /*#region*/
-  if (!arena)
+  if (!arena) {
+    jsonv_last_arena_error = JSONV_ARENA_ERR_INVALID_ARG;
     return;
-
+  }
+  jsonv_last_arena_error = JSONV_ARENA_OK;
   Jsonv_ArenaBlock *block = arena->head;
   while (block) {
     Jsonv_ArenaBlock *next = block->next;

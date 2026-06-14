@@ -115,6 +115,7 @@ Jsonv_Shape *shape_get_parent(const Jsonv_Shape *s);
 int shape_get_slot_count(const Jsonv_Shape *s);
 int shape_get_last_slot(const Jsonv_Shape *s);
 const char *shape_get_last_key(const Jsonv_Shape *s);
+Jsonv_Shape* shape_root(void);
 
 Jsonv_Shape *obj_get_shape(const Jsonv_Obj *o);
 Jsonv_Value *obj_get_slots(const Jsonv_Obj *o);

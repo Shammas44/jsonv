@@ -3,6 +3,7 @@
 #include "token.h"
 #include "mem.h" // Conforms to strict allocation rules
 #include <errno.h>
+#include <stdint.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>

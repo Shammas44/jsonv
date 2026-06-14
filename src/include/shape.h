@@ -64,9 +64,6 @@ JSONV_API bool jsonv_arr_get(Jsonv_Arr *a, int index, Jsonv_Value *out);
 JSONV_API int jsonv_arr_length(const Jsonv_Arr *a);
 JSONV_API Jsonv_Value jsonv_arr_val_at(const Jsonv_Arr *a, int index);
 
-// Public Shape Operations
-JSONV_API Jsonv_Shape* jsonv_shape_root(void);
-
 // Nested format accessor
 JSONV_API Jsonv_Value jsonv_value_get_path(Jsonv_Value current, const char *fmt, ...);
 

@@ -4,7 +4,7 @@
 #include "lexer.h"
 #include "set.h"
 #include "stack.h"
-#include "arena.h"
+#include "arena.internal.h"
 #include "mem.h"
 #include <stdarg.h>
 #include <stdio.h>
@@ -751,31 +751,31 @@ void parse_to_ast(
 
   // 1. AST Stack
   size_t ast_storage_size = json_length * sizeof(ASTNode);
-  void *ast_storage = jsonv_arena_alloc(arena, ast_storage_size);
+  void *ast_storage = arena_alloc(arena, ast_storage_size);
   stack_init(out_ast, sizeof(ASTNode), ast_storage, ast_storage_size);
 
   // 2. Transient Scopes Stack
   Stack scopes = {0};
   size_t scopes_storage_size = json_length * sizeof(int);
-  void *scopes_storage = jsonv_arena_alloc(arena, scopes_storage_size);
+  void *scopes_storage = arena_alloc(arena, scopes_storage_size);
   stack_init(&scopes, sizeof(int), scopes_storage, scopes_storage_size);
 
   // 3. Transient Control Stack
   Stack control = {0};
   size_t control_storage_size = json_length * sizeof(int);
-  void *control_storage = jsonv_arena_alloc(arena, control_storage_size);
+  void *control_storage = arena_alloc(arena, control_storage_size);
   stack_init(&control, sizeof(int), control_storage, control_storage_size);
 
   // 4. Element Set (1.2 load factor via fast integer math)
   size_t capacity = (est_value_count * 12) / 10;
   size_t keys_capacity = set_next_power_of_two(capacity);
   size_t set_storage_size = sizeof(entry_t) * keys_capacity;
-  entry_t *set_data = (entry_t *)jsonv_arena_alloc(arena, set_storage_size);
+  entry_t *set_data = (entry_t *)arena_alloc(arena, set_storage_size);
   set_init(out_set, set_data, keys_capacity);
 
   // 5. Key Tree
   size_t key_storage_size = sizeof(KeyNode) * keys_capacity;
-  KeyNode *keytree_data = (KeyNode *)jsonv_arena_alloc(arena, key_storage_size);
+  KeyNode *keytree_data = (KeyNode *)arena_alloc(arena, key_storage_size);
   key_tree_init(out_keytree, keytree_data, keys_capacity);
 
   // 6. Invoke parser
