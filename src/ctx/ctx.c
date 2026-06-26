@@ -6,6 +6,8 @@
 #include "keytree.h"
 #include "mem.h"
 #include "prescan.h"
+#include "yaml_lexer.h"
+#include "yaml_parser.h"
 #include "schema.h"
 #include "validate.h"
 #include <assert.h>
@@ -221,6 +223,144 @@ bool jsonv_ctx_parse_data(
   EXCEPT(MALFORMED_JSON) {
     ctx->last_error.type = Jsonv_Malformed_json;
     snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Malformed JSON");
+    ctx->has_error = true;
+  }
+  EXCEPT(Mem_Failed) {
+    ctx->last_error.type = Jsonv_Mem_Failed;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Memory Allocation Failed");
+    ctx->has_error = true;
+  }
+  EXCEPT(ARENA_LIMIT_REACHED) {
+    ctx->last_error.type = Jsonv_Arena_Limit_Reached;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Arena Limit Reached");
+    ctx->has_error = true;
+  }
+  EXCEPT(MAXIMUM_NESTED_DEPTH_REACHED) {
+    ctx->last_error.type = Jsonv_Maximum_Nested_Depth_Reached;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Maximum Nested Depth Reached");
+    ctx->has_error = true;
+  }
+  EXCEPT(MAXIMUM_VALUES_REACHED) {
+    ctx->last_error.type = Jsonv_Maximum_Values_Reached;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Maximum Values Reached");
+    ctx->has_error = true;
+  }
+  EXCEPT(MAXIMUM_OBJECT_REACHED) {
+    ctx->last_error.type = Jsonv_Maximum_Object_Reached;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Maximum Object Reached");
+    ctx->has_error = true;
+  }
+  EXCEPT(MAXIMUM_ARRAY_REACHED) {
+    ctx->last_error.type = Jsonv_Maximum_Array_Reached;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Maximum Array Reached");
+    ctx->has_error = true;
+  }
+  EXCEPT(MAXIMUM_TOKEN_BYTES_REACHED) {
+    ctx->last_error.type = Jsonv_Maximum_Token_Bytes_Reached;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Maximum Token Bytes Reached");
+    ctx->has_error = true;
+  }
+  END_TRY;
+
+  return false;
+  /*#endregion*/
+}
+
+static void yaml_prescan(const char *s, size_t len, JsonEstimate *out) {
+  /*#region*/
+  memset(out, 0, sizeof(*out));
+  out->max_depth = 1;
+  
+  bool line_start = true;
+  size_t current_indent = 0;
+  
+  for (size_t i = 0; i < len; i++) {
+    char c = s[i];
+    
+    if (line_start) {
+      if (c == ' ') {
+        current_indent++;
+        continue;
+      }
+      if (c == '\t') {
+        continue;
+      }
+      line_start = false;
+      
+      size_t depth = current_indent / 2 + 1;
+      if (depth > out->max_depth) {
+        out->max_depth = depth;
+      }
+      current_indent = 0;
+    }
+    
+    if (c == '\n' || c == '\r') {
+      line_start = true;
+      continue;
+    }
+    
+    if (c == ':') {
+      out->object_count++;
+      out->value_count += 2;
+    } else if (c == '-') {
+      out->array_count++;
+      out->value_count++;
+    }
+    
+    out->string_bytes++;
+  }
+  
+  if (out->value_count == 0) {
+    out->value_count = 16;
+  }
+  /*#endregion*/
+}
+
+bool jsonv_ctx_parse_yaml_data(
+    Jsonv_Context *ctx,
+    const unsigned char *data_yaml
+) {
+  /*#region*/
+  assert(ctx);
+  assert(data_yaml);
+  
+  memset(&ctx->last_error, 0, sizeof(Jsonv_Error));
+  ctx->has_error = false;
+  
+  size_t yaml_length = strlen((char *)data_yaml);
+  if (yaml_length == 0) {
+    ctx->last_error.type = Jsonv_Malformed_json;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Empty YAML");
+    ctx->has_error = true;
+    return false;
+  }
+  
+  YamlLexer lexer;
+  yaml_lexer_init(&lexer, data_yaml, yaml_length);
+
+  TRY {
+    // 1. PRE-SCAN
+    JsonEstimate est = {0};
+    yaml_prescan((const char *)data_yaml, yaml_length, &est);
+    
+    // 2. CHECK LIMITS IF CONFIG
+    if (ctx->config.max_depth > 0) {
+      if (est.max_depth > ctx->config.max_depth) RAISE(MAXIMUM_NESTED_DEPTH_REACHED);
+      if (est.value_count > ctx->config.max_values) RAISE(MAXIMUM_VALUES_REACHED);
+      if (est.object_count > ctx->config.max_objects) RAISE(MAXIMUM_OBJECT_REACHED);
+      if (est.array_count > ctx->config.max_array) RAISE(MAXIMUM_ARRAY_REACHED);
+      if (est.string_bytes > ctx->config.max_string_bytes) RAISE(MAXIMUM_TOKEN_BYTES_REACHED);
+    }
+    
+    // 3. COMPILE AST
+    yaml_parse_to_ast(ctx->execution_arena, &lexer, yaml_length, est.value_count, &ctx->data, &ctx->data_keytree, &ctx->data_set);
+
+    return true;
+  }
+  EXCEPT(MALFORMED_JSON) {
+    printf("MALFORMED_JSON at line %d, col %d (pos %zu)\n", lexer.current_line, lexer.current_col, lexer.current_pos);
+    ctx->last_error.type = Jsonv_Malformed_json;
+    snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Malformed YAML");
     ctx->has_error = true;
   }
   EXCEPT(Mem_Failed) {

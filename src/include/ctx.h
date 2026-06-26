@@ -41,6 +41,11 @@ JSONV_API bool jsonv_ctx_parse_data(
     const unsigned char *data_json
 );
 
+JSONV_API bool jsonv_ctx_parse_yaml_data(
+    Jsonv_Context *ctx,
+    const unsigned char *data_yaml
+);
+
 JSONV_API bool jsonv_ctx_validate(
     Jsonv_Context *ctx,
     const Jsonv_Schema *schema

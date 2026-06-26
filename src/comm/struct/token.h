@@ -20,6 +20,10 @@ typedef enum {
   T_NULL,
   T_TRUE,
   T_FALSE,
+  // YAML
+  T_YAML_INDENT,
+  T_YAML_DEDENT,
+  T_YAML_BULLET,
 } TokenType;
 
   typedef union {
