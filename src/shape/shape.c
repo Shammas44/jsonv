@@ -125,7 +125,8 @@ Shape* shape_root(void) {
 
 int shape_lookup_slot(Shape* s, const char *key) {
   /*#region*/
-  size_t key_len = lstr_len(key);
+  if (!key) return -1;
+  size_t key_len = strlen(key);
   for (Shape* cur = s; cur && cur->last_key; cur = cur->parent) {
     size_t cur_len = lstr_len(cur->last_key);
     if (cur_len == key_len && memcmp(cur->last_key, key, key_len) == 0) {

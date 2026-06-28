@@ -258,3 +258,74 @@ TIMED_TEST(T, obj_and_arr_iteration_accessors, init, fini)
   cr_expect_eq(jsonv_arr_val_at(arr, 3).tag, JSONV_VAL_UNDEFINED);
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, path_traversal_tests, init, fini)
+/*#region*/
+  // 1. Build nested structure:
+  // {
+  //   "user": {
+  //     "name": "Alice",
+  //     "history": [100, 200, 300]
+  //   }
+  // }
+  const char *k_user = make_temp_lstr(arena, "user");
+  const char *k_name = make_temp_lstr(arena, "name");
+  const char *k_history = make_temp_lstr(arena, "history");
+
+  Jsonv_Obj *user_obj = jsonv_obj_new(arena, root);
+  jsonv_obj_set(arena, user_obj, k_name, jsonv_val_str("Alice"));
+
+  Jsonv_Arr *history_arr = jsonv_arr_new(arena);
+  jsonv_arr_set(arena, history_arr, 0, jsonv_val_int(100));
+  jsonv_arr_set(arena, history_arr, 1, jsonv_val_int(200));
+  jsonv_arr_set(arena, history_arr, 2, jsonv_val_int(300));
+  jsonv_obj_set(arena, user_obj, k_history, jsonv_val_arr(history_arr));
+
+  Jsonv_Obj *root_obj = jsonv_obj_new(arena, root);
+  jsonv_obj_set(arena, root_obj, k_user, jsonv_val_obj(user_obj));
+
+  Jsonv_Value root_val = jsonv_val_obj(root_obj);
+
+  // 2. Test successful lookups
+  // root -> user (object) -> name (string)
+  Jsonv_Value name_val = jsonv_value_get_path(root_val, "ss", "user", "name");
+  cr_expect_eq(name_val.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(name_val.as.p, "Alice");
+
+  // root -> user -> history (array) -> 1 (int)
+  Jsonv_Value hist_1 = jsonv_value_get_path(root_val, "ssi", "user", "history", 1);
+  cr_expect_eq(hist_1.tag, JSONV_VAL_INT);
+  cr_expect_eq(hist_1.as.i, 200);
+
+  // root -> user -> history -> 2 (int)
+  Jsonv_Value hist_2 = jsonv_value_get_path(root_val, "ssi", "user", "history", 2);
+  cr_expect_eq(hist_2.tag, JSONV_VAL_INT);
+  cr_expect_eq(hist_2.as.i, 300);
+
+  // 3. Test unresolvable lookups (missing key or out of bounds index)
+  // root -> user -> age (missing key)
+  Jsonv_Value missing_key = jsonv_value_get_path(root_val, "ss", "user", "age");
+  cr_expect_eq(missing_key.tag, JSONV_VAL_UNRESOLVABLE);
+
+  // root -> user -> history -> 5 (index out of bounds)
+  Jsonv_Value oob_index = jsonv_value_get_path(root_val, "ssi", "user", "history", 5);
+  cr_expect_eq(oob_index.tag, JSONV_VAL_UNRESOLVABLE);
+
+  // 4. Test impossible lookups
+  // Lookup index on root (which is object, not array)
+  Jsonv_Value idx_on_obj = jsonv_value_get_path(root_val, "i", 0);
+  cr_expect_eq(idx_on_obj.tag, JSONV_VAL_IMPOSSIBLE);
+
+  // Lookup key on history (which is array, not object)
+  Jsonv_Value key_on_arr = jsonv_value_get_path(root_val, "sss", "user", "history", "first");
+  cr_expect_eq(key_on_arr.tag, JSONV_VAL_IMPOSSIBLE);
+
+  // Traversal beyond scalar (Alice is string, cannot traverse further)
+  Jsonv_Value beyond_scalar = jsonv_value_get_path(root_val, "sss", "user", "name", "extra");
+  cr_expect_eq(beyond_scalar.tag, JSONV_VAL_IMPOSSIBLE);
+
+  // Invalid format character
+  Jsonv_Value invalid_fmt = jsonv_value_get_path(root_val, "sx", "user", "name");
+  cr_expect_eq(invalid_fmt.tag, JSONV_VAL_IMPOSSIBLE);
+/*#endregion*/
+END_TIMED_TEST

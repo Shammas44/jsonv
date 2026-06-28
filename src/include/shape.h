@@ -64,7 +64,29 @@ JSONV_API bool jsonv_arr_get(Jsonv_Arr *a, int index, Jsonv_Value *out);
 JSONV_API int jsonv_arr_length(const Jsonv_Arr *a);
 JSONV_API Jsonv_Value jsonv_arr_val_at(const Jsonv_Arr *a, int index);
 
-// Nested format accessor
+/**
+ * @brief Retrieves a nested value from a JSON root value using a format string path.
+ *
+ * This function accepts a variadic list of arguments (keys or indices) matching
+ * the format specifiers in the format string.
+ *
+ * Format specifiers:
+ *   - 's': Object key lookup (expects a `const char *` argument)
+ *   - 'i': Array index lookup (expects an `int` argument)
+ *
+ * Examples:
+ *   - To lookup `root["users"][3]["name"]`:
+ *     `jsonv_value_get_path(root, "sis", "users", 3, "name")`
+ *
+ * If a path component does not exist, a value with the tag `JSONV_VAL_UNRESOLVABLE` is returned.
+ * If the path cannot be traversed because a value along the way is not an object/array,
+ * or an invalid format character is provided, a value with the tag `JSONV_VAL_IMPOSSIBLE` is returned.
+ *
+ * @param current The root value to traverse (must be an Object or Array to begin traversal).
+ * @param fmt A null-terminated format string containing 's' and/or 'i' specifiers.
+ * @param ... Variadic arguments matching the format string specifiers.
+ * @return The retrieved `Jsonv_Value`.
+ */
 JSONV_API Jsonv_Value jsonv_value_get_path(Jsonv_Value current, const char *fmt, ...);
 
 #endif
