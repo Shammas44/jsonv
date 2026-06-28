@@ -1,4 +1,5 @@
 #include "ctx.h"
+#ifdef JSONV_YAML_SUPPORT
 #include "utils.h"
 #include <criterion/criterion.h>
 #include <string.h>
@@ -240,4 +241,5 @@ cr_assert_eq(flow_arr_0.tag, JSONV_VAL_DOUBLE);
 cr_assert_eq(flow_arr_0.as.d, 3.0);
 /*#endregion*/
 END_TIMED_TEST
+#endif // JSONV_YAML_SUPPORT
 

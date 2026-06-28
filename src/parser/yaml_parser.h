@@ -1,6 +1,8 @@
 #ifndef _JSONV_YAML_PARSER_H_INCLUDED
 #define _JSONV_YAML_PARSER_H_INCLUDED
 
+#ifdef JSONV_YAML_SUPPORT
+
 #include "ast.h"
 #include "shape.internal.h"
 #include "keytree.h"
@@ -21,5 +23,7 @@ void yaml_parse_to_ast(
     KeyTreePool *out_keytree,
     set_t *out_set
 );
+
+#endif // JSONV_YAML_SUPPORT
 
 #endif

@@ -6,8 +6,10 @@
 #include "keytree.h"
 #include "mem.h"
 #include "prescan.h"
+#ifdef JSONV_YAML_SUPPORT
 #include "yaml_lexer.h"
 #include "yaml_parser.h"
+#endif
 #include "schema.h"
 #include "validate.h"
 #include <assert.h>
@@ -266,6 +268,7 @@ bool jsonv_ctx_parse_data(
   /*#endregion*/
 }
 
+#ifdef JSONV_YAML_SUPPORT
 static void yaml_prescan(const char *s, size_t len, JsonEstimate *out) {
   /*#region*/
   memset(out, 0, sizeof(*out));
@@ -358,7 +361,6 @@ bool jsonv_ctx_parse_yaml_data(
     return true;
   }
   EXCEPT(MALFORMED_JSON) {
-    printf("MALFORMED_JSON at line %d, col %d (pos %zu)\n", lexer.current_line, lexer.current_col, lexer.current_pos);
     ctx->last_error.type = Jsonv_Malformed_json;
     snprintf(ctx->last_error.description, sizeof(ctx->last_error.description), "Malformed YAML");
     ctx->has_error = true;
@@ -403,6 +405,7 @@ bool jsonv_ctx_parse_yaml_data(
   return false;
   /*#endregion*/
 }
+#endif
 
 bool jsonv_ctx_validate(
     Jsonv_Context *ctx,

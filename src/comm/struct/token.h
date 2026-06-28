@@ -20,10 +20,12 @@ typedef enum {
   T_NULL,
   T_TRUE,
   T_FALSE,
+#ifdef JSONV_YAML_SUPPORT
   // YAML
   T_YAML_INDENT,
   T_YAML_DEDENT,
   T_YAML_BULLET,
+#endif
 } TokenType;
 
   typedef union {

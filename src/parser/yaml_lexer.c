@@ -1,4 +1,5 @@
 #include "yaml_lexer.h"
+#ifdef JSONV_YAML_SUPPORT
 #include "assert.h"
 #include "mem.h"
 #include <errno.h>
@@ -325,3 +326,4 @@ Token yaml_lexer_next_token(T *l) {
   return parse_unquoted_scalar(l);
   /*#endregion*/
 }
+#endif // JSONV_YAML_SUPPORT

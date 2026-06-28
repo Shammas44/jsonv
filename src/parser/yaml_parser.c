@@ -1,4 +1,5 @@
 #include "yaml_parser.h"
+#ifdef JSONV_YAML_SUPPORT
 #include "except.h"
 #include "assert.h"
 #include "arena.internal.h"
@@ -382,3 +383,4 @@ void yaml_parse_to_ast(
   yaml_parse_ast(lexer, out_ast, &scopes, NULL, out_set, out_keytree);
   /*#endregion*/
 }
+#endif // JSONV_YAML_SUPPORT

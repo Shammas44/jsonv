@@ -68,8 +68,18 @@ FUZZ_LIB := $(LIB_DIR)/lib$(PROJECT_NAME)_fuzz.a
 
 # --- Source Files and Objects ---
 SRC_FILES := $(shell find $(SRC_DIR) -type f -name "*.c")
-OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_FILES))
 TEST_SRC_FILES := $(wildcard $(TEST_DIR)/*.c)
+
+# --- Optional YAML parsing support (default: YAML=1) ---
+YAML ?= 1
+ifeq ($(YAML), 0)
+  SRC_FILES := $(filter-out src/parser/yaml_lexer.c src/parser/yaml_parser.c, $(SRC_FILES))
+  TEST_SRC_FILES := $(filter-out tests/yaml.test.c, $(TEST_SRC_FILES))
+else
+  CFLAGS += -DJSONV_YAML_SUPPORT
+endif
+
+OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRC_FILES))
 TEST_OBJS := $(patsubst $(TEST_DIR)/%.c,$(OBJ_DIR)/test_%.o,$(TEST_SRC_FILES))
 FUZZ_OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/fuzz_%.o,$(SRC_FILES))
 

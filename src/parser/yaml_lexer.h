@@ -1,6 +1,8 @@
 #ifndef _JSONV_YAML_LEXER_H_INCLUDED
 #define _JSONV_YAML_LEXER_H_INCLUDED
 
+#ifdef JSONV_YAML_SUPPORT
+
 #include "token.h"
 #include <stddef.h>
 #include <stdbool.h>
@@ -33,4 +35,7 @@ typedef struct YamlLexer {
 void yaml_lexer_init(YamlLexer *l, const unsigned char *source, size_t len);
 Token yaml_lexer_next_token(YamlLexer *l);
 
+#endif // JSONV_YAML_SUPPORT
+
 #endif
+
