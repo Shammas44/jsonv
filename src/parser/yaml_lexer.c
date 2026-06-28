@@ -119,6 +119,193 @@ static Token parse_unquoted_scalar(T *l) {
   /*#endregion*/
 }
 
+static Token parse_block_scalar(T *l, char type) {
+  /*#region*/
+  (void)type; // both '|' and '>' yield raw block slice views in zero-copy mode
+  
+  l->current_pos++; // Consume opening symbol ('|' or '>')
+  l->current_col++;
+  
+  // Consume any chomping (+/-) or indentation indicators to advance to inline space/comment scan
+  while (l->current_pos < l->source_len) {
+    char c = l->source[l->current_pos];
+    if (c == '+' || c == '-' || (c >= '0' && c <= '9')) {
+      l->current_pos++;
+      l->current_col++;
+    } else {
+      break;
+    }
+  }
+  
+  // Strip trailing inline spaces/tabs on the header line to reach the line ending
+  while (l->current_pos < l->source_len) {
+    char c = l->source[l->current_pos];
+    if (c == ' ' || c == '\t') {
+      l->current_pos++;
+      l->current_col++;
+    } else {
+      break;
+    }
+  }
+  
+  // Skip any trailing inline comment on the header line
+  if (l->current_pos < l->source_len && l->source[l->current_pos] == '#') {
+    while (l->current_pos < l->source_len && !is_newline(l->source[l->current_pos])) {
+      l->current_pos++;
+    }
+  }
+  
+  // Consume the newline terminating the header line and reset column state
+  if (l->current_pos < l->source_len && is_newline(l->source[l->current_pos])) {
+    char nl = l->source[l->current_pos];
+    l->current_pos++;
+    if (nl == '\r' && l->current_pos < l->source_len && l->source[l->current_pos] == '\n') {
+      l->current_pos++;
+    }
+    l->current_line++;
+    l->current_col = 0;
+  }
+  
+  int parent_indent = l->indent_stack[l->indent_top];
+  int block_indent = -1;
+  size_t block_start = 0;
+  size_t block_end = 0;
+  
+  // Scan subsequent lines to establish the block indentation level (the first non-empty line)
+  while (l->current_pos < l->source_len) {
+    size_t line_pos = l->current_pos;
+    int line_indent = 0;
+    
+    // Count spaces at start of the line to check nesting level
+    while (l->current_pos < l->source_len && l->source[l->current_pos] == ' ') {
+      line_indent++;
+      l->current_pos++;
+    }
+    
+    // Check if the current line contains only spaces, comments, or a newline
+    bool is_empty = (l->current_pos >= l->source_len || 
+                     is_newline(l->source[l->current_pos]) || 
+                     l->source[l->current_pos] == '#');
+                     
+    if (is_empty) {
+      // Consume the entire empty/comment line and proceed to the next line
+      if (l->current_pos < l->source_len && l->source[l->current_pos] == '#') {
+        while (l->current_pos < l->source_len && !is_newline(l->source[l->current_pos])) {
+          l->current_pos++;
+        }
+      }
+      if (l->current_pos < l->source_len && is_newline(l->source[l->current_pos])) {
+        char nl = l->source[l->current_pos];
+        l->current_pos++;
+        if (nl == '\r' && l->current_pos < l->source_len && l->source[l->current_pos] == '\n') {
+          l->current_pos++;
+        }
+      }
+      l->current_line++;
+      l->current_col = 0;
+      continue;
+    }
+    
+    // Non-empty line: establish block indentation level
+    block_indent = line_indent;
+    if (block_indent <= parent_indent) {
+      // Indentation is not deeper than parent context; block is empty
+      l->current_pos = line_pos;
+      l->is_line_start = true;
+      return (Token){.value = {.string = {l->source + line_pos, 0}}, T_STRING};
+    }
+    
+    // Block content starts right after the block indentation spaces
+    block_start = l->current_pos;
+    
+    // Consume the rest of the first content line
+    while (l->current_pos < l->source_len && !is_newline(l->source[l->current_pos])) {
+      l->current_pos++;
+    }
+    if (l->current_pos < l->source_len) {
+      char nl = l->source[l->current_pos];
+      l->current_pos++;
+      if (nl == '\r' && l->current_pos < l->source_len && l->source[l->current_pos] == '\n') {
+        l->current_pos++;
+      }
+    }
+    l->current_line++;
+    l->current_col = 0;
+    break;
+  }
+  
+  if (block_indent == -1) {
+    // Reached EOF without any non-empty content lines
+    l->is_line_start = true;
+    return (Token){.value = {.string = {l->source + l->source_len, 0}}, T_STRING};
+  }
+  
+  // Loop to consume subsequent lines belonging to the block scalar
+  while (l->current_pos < l->source_len) {
+    size_t line_pos = l->current_pos;
+    int line_indent = 0;
+    
+    // Count leading indentation spaces
+    while (l->current_pos < l->source_len && l->source[l->current_pos] == ' ') {
+      line_indent++;
+      l->current_pos++;
+    }
+    
+    bool is_empty = (l->current_pos >= l->source_len || 
+                     is_newline(l->source[l->current_pos]) || 
+                     l->source[l->current_pos] == '#');
+                     
+    if (is_empty) {
+      // Empty lines inside a block scalar are preserved as part of the block
+      if (l->current_pos < l->source_len && l->source[l->current_pos] == '#') {
+        while (l->current_pos < l->source_len && !is_newline(l->source[l->current_pos])) {
+          l->current_pos++;
+        }
+      }
+      if (l->current_pos < l->source_len && is_newline(l->source[l->current_pos])) {
+        char nl = l->source[l->current_pos];
+        l->current_pos++;
+        if (nl == '\r' && l->current_pos < l->source_len && l->source[l->current_pos] == '\n') {
+          l->current_pos++;
+        }
+      }
+      l->current_line++;
+      l->current_col = 0;
+      continue;
+    }
+    
+    // Check if the non-empty line's indentation belongs to this block
+    if (line_indent >= block_indent) {
+      // Consume the line content
+      while (l->current_pos < l->source_len && !is_newline(l->source[l->current_pos])) {
+        l->current_pos++;
+      }
+      if (l->current_pos < l->source_len) {
+        char nl = l->source[l->current_pos];
+        l->current_pos++;
+        if (nl == '\r' && l->current_pos < l->source_len && l->source[l->current_pos] == '\n') {
+          l->current_pos++;
+        }
+      }
+      l->current_line++;
+      l->current_col = 0;
+    } else {
+      // Indentation is less than block_indent: terminates the block scalar.
+      // Rewind to the start of this line so it can be scanned normally in the next iteration.
+      block_end = line_pos;
+      l->current_pos = line_pos;
+      l->is_line_start = true;
+      return (Token){.value = {.string = {l->source + block_start, block_end - block_start}}, T_STRING};
+    }
+  }
+  
+  // Reached EOF: terminate the block at the end of the source buffer
+  block_end = l->source_len;
+  l->is_line_start = true;
+  return (Token){.value = {.string = {l->source + block_start, block_end - block_start}}, T_STRING};
+  /*#endregion*/
+}
+
 void yaml_lexer_init(T *l, const unsigned char *source, size_t len) {
   /*#region*/
   assert(l);
@@ -320,6 +507,11 @@ Token yaml_lexer_next_token(T *l) {
   // 8. Quoted Strings
   if (c == '"' || c == '\'') {
     return parse_quoted_string(l, c);
+  }
+
+  // 8b. Block Scalars
+  if (c == '|' || c == '>') {
+    return parse_block_scalar(l, c);
   }
 
   // 9. Unquoted Scalar

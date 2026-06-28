@@ -241,5 +241,40 @@ cr_assert_eq(flow_arr_0.tag, JSONV_VAL_DOUBLE);
 cr_assert_eq(flow_arr_0.as.d, 3.0);
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, parse_block_scalars, init, fini)
+/*#region*/
+  const char *yaml =
+      "literal: |\n"
+      "  line 1\n"
+      "  line 2\n"
+      "folded: >\n"
+      "  folded 1\n"
+      "  folded 2\n"
+      "normal: string";
+
+  cr_assert(jsonv_ctx_parse_yaml_data(ctx, (const unsigned char *)yaml));
+
+  Jsonv_Value val;
+  bool has_val = jsonv_ctx_get_value(ctx, &val);
+  cr_assert(has_val);
+  cr_assert_eq(val.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value literal;
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "literal"), &literal));
+  cr_assert_eq(literal.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(literal.as.p, "line 1\n  line 2\n");
+
+  Jsonv_Value folded;
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "folded"), &folded));
+  cr_assert_eq(folded.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(folded.as.p, "folded 1\n  folded 2\n");
+
+  Jsonv_Value normal;
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "normal"), &normal));
+  cr_assert_eq(normal.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(normal.as.p, "string");
+/*#endregion*/
+END_TIMED_TEST
 #endif // JSONV_YAML_SUPPORT
 
