@@ -33,11 +33,13 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
     # macOS linker flags
     LIB_EXT := dylib
-    SHARED_LDFLAGS := -Wl,-install_name,$(INSTALL_LIB_DIR)/lib$(PROJECT_NAME).$(LIB_EXT)
+    SHARED_LDFLAGS := -Wl,-install_name,@rpath/lib$(PROJECT_NAME).$(LIB_EXT)
+    EXE_RPATH_LDFLAGS = -Wl,-rpath,@loader_path/lib -Wl,-rpath,@loader_path/../lib -Wl,-rpath,$(INSTALL_LIB_DIR)
 else
     # Linux linker flags
     LIB_EXT := so
     SHARED_LDFLAGS := -Wl,-soname,lib$(PROJECT_NAME).$(LIB_EXT)
+    EXE_RPATH_LDFLAGS = -Wl,-rpath,$(INSTALL_LIB_DIR)
 endif
 
 # --- AFL++ Fuzzing Tools (Used inside Docker) ---
@@ -140,8 +142,8 @@ $(LIB_DIR)/lib$(PROJECT_NAME).$(LIB_EXT): $(OBJS) | dirs
 # --- Main Executable (Dynamic Link) ---
 main_d: $(MAIN_APP_DYNAMIC)
 $(MAIN_APP_DYNAMIC): $(OBJ_DIR)/main.o $(LIB_DIR)/lib$(PROJECT_NAME).$(LIB_EXT) | dirs
-	@echo "[CC] Linking DYNAMIC$@"
-	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LINK_USER_SHARED_LIBS) -Wl,-rpath,$(INSTALL_LIB_DIR)
+	@echo "[CC] Linking DYNAMIC $@"
+	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LINK_USER_SHARED_LIBS) $(EXE_RPATH_LDFLAGS)
 
 # --- Main Executable (Static Link) ---
 main: static $(MAIN_APP_STATIC) # Ensure the static library is built first
