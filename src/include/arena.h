@@ -50,5 +50,20 @@ JSONV_API void jsonv_arena_reset_to(T *arena, size_t keep_size);
  */
 JSONV_API void jsonv_arena_destroy(T *arena);
 
+typedef struct Jsonv_Arena_Ops {
+    void *(*alloc)(void *user_data, size_t size);
+    void (*reset)(void *user_data);
+    void (*reset_to)(void *user_data, size_t keep_size);
+    void (*destroy)(void *user_data);
+} Jsonv_Arena_Ops;
+
+/**
+ * @description Create a wrapper arena around a user-defined custom allocator
+ * @param ops       Struct of function pointers representing allocator operations
+ * @param user_data Arbitrary pointer passed back to the callbacks
+ * @return Opaque pointer to the wrapped arena
+ */
+JSONV_API T *jsonv_arena_new_custom(const Jsonv_Arena_Ops *ops, void *user_data);
+
 #undef T
 #endif

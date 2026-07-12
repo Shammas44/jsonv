@@ -195,3 +195,114 @@ Jsonv_ArenaBlock*current = arena_get_current(internal);
           "Block capacity should adapt to huge request");
 /*#endregion*/
 END_TIMED_TEST
+
+// -----------------------------------------------------------------------------
+// CUSTOM ALLOCATOR TESTS
+// -----------------------------------------------------------------------------
+
+typedef struct {
+  uint8_t buffer[1024];
+  size_t offset;
+  int reset_called;
+  int reset_to_called;
+  int destroy_called;
+} CustomAllocTestCtx;
+
+static void *custom_alloc_fn(void *user_data, size_t size) {
+  CustomAllocTestCtx *ctx = (CustomAllocTestCtx *)user_data;
+  size_t aligned = (size + 15) & ~15;
+  if (ctx->offset + aligned > sizeof(ctx->buffer)) {
+    return NULL;
+  }
+  void *ptr = &ctx->buffer[ctx->offset];
+  ctx->offset += aligned;
+  return ptr;
+}
+
+static void custom_reset_fn(void *user_data) {
+  CustomAllocTestCtx *ctx = (CustomAllocTestCtx *)user_data;
+  ctx->offset = 0;
+  ctx->reset_called++;
+}
+
+static void custom_reset_to_fn(void *user_data, size_t keep_size) {
+  CustomAllocTestCtx *ctx = (CustomAllocTestCtx *)user_data;
+  ctx->offset = (keep_size + 15) & ~15;
+  ctx->reset_to_called++;
+}
+
+static void custom_destroy_fn(void *user_data) {
+  CustomAllocTestCtx *ctx = (CustomAllocTestCtx *)user_data;
+  ctx->destroy_called++;
+}
+
+TIMED_TEST(T, custom_allocator, NULL, NULL)
+/*#region*/
+CustomAllocTestCtx ctx = {0};
+Jsonv_Arena_Ops ops = {
+  .alloc = custom_alloc_fn,
+  .reset = custom_reset_fn,
+  .reset_to = custom_reset_to_fn,
+  .destroy = custom_destroy_fn
+};
+
+Jsonv_Arena *custom_arena = jsonv_arena_new_custom(&ops, &ctx);
+cr_assert(custom_arena != NULL);
+
+// 1. Test alloc
+void *p1 = jsonv_arena_alloc(custom_arena, 10);
+void *p2 = jsonv_arena_alloc(custom_arena, 20);
+cr_assert(p1 != NULL);
+cr_assert(p2 != NULL);
+cr_expect(p2 > p1);
+cr_expect_eq(ctx.offset, 48); // 16 (for 10 bytes) + 32 (for 20 bytes)
+
+// 2. Test reset
+jsonv_arena_reset(custom_arena);
+cr_expect_eq(ctx.offset, 0);
+cr_expect_eq(ctx.reset_called, 1);
+
+// 3. Test reset_to
+jsonv_arena_reset_to(custom_arena, 12);
+cr_expect_eq(ctx.offset, 16);
+cr_expect_eq(ctx.reset_to_called, 1);
+
+// 4. Test destroy
+jsonv_arena_destroy(custom_arena);
+cr_expect_eq(ctx.destroy_called, 1);
+/*#endregion*/
+END_TIMED_TEST
+
+static void *custom_alloc_err_fn(void *user_data, size_t size) {
+  (void)size;
+  int *custom_err = (int *)user_data;
+  *custom_err = 42; // Set a custom decoupled error code in user space
+  return NULL;
+}
+
+TIMED_TEST(T, custom_allocator_error_handling, NULL, NULL)
+/*#region*/
+  int error_code = 0;
+  Jsonv_Arena_Ops ops = {
+    .alloc = custom_alloc_err_fn,
+    .reset = NULL,
+    .reset_to = NULL,
+    .destroy = NULL
+  };
+
+  Jsonv_Arena *custom_arena = jsonv_arena_new_custom(&ops, &error_code);
+  cr_assert(custom_arena != NULL);
+
+  // When custom allocator fails (returns NULL), the library maps it to JSONV_ARENA_ERR_ALLOC
+  void *p = jsonv_arena_alloc(custom_arena, 10);
+  cr_expect(p == NULL);
+  cr_expect_eq(jsonv_last_arena_error, JSONV_ARENA_ERR_ALLOC);
+
+  // The custom decoupled error code set in user space is preserved
+  cr_expect_eq(error_code, 42);
+
+  jsonv_arena_destroy(custom_arena);
+/*#endregion*/
+END_TIMED_TEST
+
+

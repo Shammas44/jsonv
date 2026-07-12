@@ -19,6 +19,9 @@ typedef struct Jsonv_ArenaBlock {
 } Jsonv_ArenaBlock;
 
 typedef struct Jsonv_Arena {
+  const Jsonv_Arena_Ops *ops;
+  void *user_data;
+
   Jsonv_ArenaBlock *head;
   Jsonv_ArenaBlock *current;
 
@@ -67,6 +70,8 @@ Jsonv_Arena *jsonv_arena_new(size_t default_block_size, size_t max_limit,
     return NULL;
   }
 
+  arena->ops = NULL;
+  arena->user_data = NULL;
   arena->default_block_size = default_block_size;
   arena->max_limit = max_limit;
   arena->shrink_at = shrink_at;
@@ -98,6 +103,24 @@ Jsonv_Arena *jsonv_arena_new(size_t default_block_size, size_t max_limit,
   /*#endregion*/
 }
 
+Jsonv_Arena *jsonv_arena_new_custom(const Jsonv_Arena_Ops *ops, void *user_data) {
+  Jsonv_Arena *arena = ALLOC(sizeof(Jsonv_Arena));
+  if (!arena) {
+    jsonv_last_arena_error = JSONV_ARENA_ERR_ALLOC;
+    return NULL;
+  }
+  arena->ops = ops;
+  arena->user_data = user_data;
+  arena->head = NULL;
+  arena->current = NULL;
+  arena->default_block_size = 0;
+  arena->max_limit = 0;
+  arena->shrink_at = 0;
+  arena->total_reserved = 0;
+  jsonv_last_arena_error = JSONV_ARENA_OK;
+  return arena;
+}
+
 Jsonv_Arena *arena_new(size_t default_block_size, size_t max_limit,
                        size_t shrink_at) {
   /*#region*/
@@ -122,6 +145,19 @@ Jsonv_Arena *arena_new(size_t default_block_size, size_t max_limit,
 void *jsonv_arena_alloc(Jsonv_Arena *arena, size_t size) {
   /*#region*/
   if (!arena) {
+    jsonv_last_arena_error = JSONV_ARENA_ERR_INVALID_ARG;
+    return NULL;
+  }
+  if (arena->ops) {
+    if (arena->ops->alloc) {
+      void *ptr = arena->ops->alloc(arena->user_data, size);
+      if (!ptr) {
+        jsonv_last_arena_error = JSONV_ARENA_ERR_ALLOC;
+      } else {
+        jsonv_last_arena_error = JSONV_ARENA_OK;
+      }
+      return ptr;
+    }
     jsonv_last_arena_error = JSONV_ARENA_ERR_INVALID_ARG;
     return NULL;
   }
@@ -218,6 +254,12 @@ void jsonv_arena_reset(Jsonv_Arena *arena) {
     return;
   }
   jsonv_last_arena_error = JSONV_ARENA_OK;
+  if (arena->ops) {
+    if (arena->ops->reset) {
+      arena->ops->reset(arena->user_data);
+    }
+    return;
+  }
   jsonv_arena_reset_to(arena, 0);
   /*#endregion*/
 }
@@ -229,6 +271,14 @@ void jsonv_arena_reset_to(Jsonv_Arena *arena, size_t keep_size) {
     return;
   }
   jsonv_last_arena_error = JSONV_ARENA_OK;
+  if (arena->ops) {
+    if (arena->ops->reset_to) {
+      arena->ops->reset_to(arena->user_data, keep_size);
+    } else if (arena->ops->reset && keep_size == 0) {
+      arena->ops->reset(arena->user_data);
+    }
+    return;
+  }
   // SMART TRIM LOGIC
   if (arena->total_reserved > arena->shrink_at) {
     // 1. Keep the HEAD, free the rest using safe FREE macro
@@ -263,6 +313,13 @@ void jsonv_arena_destroy(Jsonv_Arena *arena) {
     return;
   }
   jsonv_last_arena_error = JSONV_ARENA_OK;
+  if (arena->ops) {
+    if (arena->ops->destroy) {
+      arena->ops->destroy(arena->user_data);
+    }
+    FREE(arena);
+    return;
+  }
   Jsonv_ArenaBlock *block = arena->head;
   while (block) {
     Jsonv_ArenaBlock *next = block->next;
