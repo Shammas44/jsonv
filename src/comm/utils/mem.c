@@ -3,6 +3,7 @@
 #include "except.h"
 #include "arena.h"
 #include "arena.internal.h"
+#include "global.h"
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>

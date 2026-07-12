@@ -32,10 +32,12 @@ AR := ar
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S), Darwin)
     # macOS linker flags
-    SHARED_LDFLAGS := -Wl,-install_name,/usr/local/lib/lib$(PROJECT_NAME).so
+    LIB_EXT := dylib
+    SHARED_LDFLAGS := -Wl,-install_name,$(INSTALL_LIB_DIR)/lib$(PROJECT_NAME).$(LIB_EXT)
 else
     # Linux linker flags
-    SHARED_LDFLAGS := -Wl,-soname,lib$(PROJECT_NAME).so
+    LIB_EXT := so
+    SHARED_LDFLAGS := -Wl,-soname,lib$(PROJECT_NAME).$(LIB_EXT)
 endif
 
 # --- AFL++ Fuzzing Tools (Used inside Docker) ---
@@ -43,15 +45,15 @@ AFL_CC := afl-clang-lto
 AFL_CFLAGS := -Wall -Wextra -Werror -g -fPIC -O3
 
 # --- Build Options ---
-BASE_CFLAGS := -Wall -Wextra -Werror -fvisibility=hidden
+BASE_CFLAGS := -Wall -Wextra -Werror -fvisibility=hidden -fPIC
 ifeq ($(OPTION), prod)
   CFLAGS := $(BASE_CFLAGS) -O2
 else ifeq ($(OPTION), dev)
   CFLAGS := $(BASE_CFLAGS) -g
 else ifeq ($(OPTION), test)
-  CFLAGS := $(BASE_CFLAGS) -g -Wno-implicit-function-declaration -fPIC
+  CFLAGS := $(BASE_CFLAGS) -g -Wno-implicit-function-declaration
 else
-  CFLAGS := $(BASE_CFLAGS) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer -fPIC
+  CFLAGS := $(BASE_CFLAGS) -g -O1 -fsanitize=address,undefined -fno-omit-frame-pointer
 endif
 
 # --- Directories ---
@@ -130,16 +132,16 @@ $(FUZZ_LIB): $(FUZZ_OBJS) | dirs
 	@$(AR) rcs $@ $^
 
 # --- Build Shared Library ---
-shared: $(LIB_DIR)/lib$(PROJECT_NAME).so
-$(LIB_DIR)/lib$(PROJECT_NAME).so: $(OBJS) | dirs
+shared: $(LIB_DIR)/lib$(PROJECT_NAME).$(LIB_EXT)
+$(LIB_DIR)/lib$(PROJECT_NAME).$(LIB_EXT): $(OBJS) | dirs
 	@echo "[CC-shared] $@"
-	@$(CC) -shared $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) $(SHARED_LDFLAGS)
+	@$(CC) -shared $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LINK_USER_SHARED_LIBS) $(SHARED_LDFLAGS)
 
 # --- Main Executable (Dynamic Link) ---
 main_d: $(MAIN_APP_DYNAMIC)
-$(MAIN_APP_DYNAMIC): $(OBJ_DIR)/main.o $(LIB_DIR)/lib$(PROJECT_NAME).so | dirs
+$(MAIN_APP_DYNAMIC): $(OBJ_DIR)/main.o $(LIB_DIR)/lib$(PROJECT_NAME).$(LIB_EXT) | dirs
 	@echo "[CC] Linking DYNAMIC$@"
-	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LDLIBS) -Wl,-rpath,$(INSTALL_LIB_DIR)
+	@$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(LINK_USER_SHARED_LIBS) -Wl,-rpath,$(INSTALL_LIB_DIR)
 
 # --- Main Executable (Static Link) ---
 main: static $(MAIN_APP_STATIC) # Ensure the static library is built first
@@ -184,15 +186,19 @@ $(OBJ_DIR)/test_%.o: $(TEST_DIR)/%.c | dirs
 
 # --- Install/Uninstall ---
 install: static shared
-	@mkdir -p $(INSTALL_LIB_DIR) $(INSTALL_INCLUDE_DIR)
-	@cp $(LIB_DIR)/*.a $(LIB_DIR)/*.so $(INSTALL_LIB_DIR)/
-	@cp -R $(SRC_DIR)/include/* $(INSTALL_INCLUDE_DIR)/ | true
-	@echo "Installed to $(PREFIX)"
+	@mkdir -p $(DESTDIR)$(INSTALL_LIB_DIR) $(DESTDIR)$(INSTALL_INCLUDE_DIR)
+	@cp $(LIB_DIR)/*.a $(LIB_DIR)/*.$(LIB_EXT) $(DESTDIR)$(INSTALL_LIB_DIR)/
+	@cp -R $(SRC_DIR)/include/* $(DESTDIR)$(INSTALL_INCLUDE_DIR)/ | true
+	@echo "Installed to $(DESTDIR)$(INSTALL_INCLUDE_DIR)"
+ifeq ($(UNAME_S), Linux)
+	@echo "Updating shared library cache..."
+	@-ldconfig 2>/dev/null || sudo ldconfig 2>/dev/null || echo "Warning: Could not run ldconfig. You may need to run 'sudo ldconfig' manually."
+endif
 
 uninstall:
-	@rm -f $(INSTALL_LIB_DIR)/lib$(PROJECT_NAME).a
-	@rm -f $(INSTALL_LIB_DIR)/lib$(PROJECT_NAME).so
-	@rm -rf $(INSTALL_INCLUDE_DIR)
+	@rm -f $(DESTDIR)$(INSTALL_LIB_DIR)/lib$(PROJECT_NAME).a
+	@rm -f $(DESTDIR)$(INSTALL_LIB_DIR)/lib$(PROJECT_NAME).$(LIB_EXT)
+	@rm -rf $(DESTDIR)$(INSTALL_INCLUDE_DIR)
 	@echo "Uninstalled from $(PREFIX)"
 
 # --- Run Targets ---
@@ -224,7 +230,7 @@ start_afl:
 
 inspect:
 	@echo "Inspect exposed symbols"
-	@nm -gU $(LIB_DIR)/lib$(PROJECT_NAME).so
+	@nm -gU $(LIB_DIR)/lib$(PROJECT_NAME).$(LIB_EXT)
 
 # --- Clean Targets ---
 clean:

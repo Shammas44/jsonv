@@ -1,5 +1,5 @@
-#ifndef MACRO_H
-#define MACRO_H
+#ifndef _JSONV_MACRO_H
+#define _JSONV_MACRO_H
 
 #ifndef JSONV_API
   #if defined(__GNUC__) && __GNUC__ >= 4

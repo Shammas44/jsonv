@@ -1,4 +1,3 @@
-#include "file.h"
 #include "jsonv.h"
 #include <dirent.h>
 #include <errno.h>
@@ -47,38 +46,186 @@ static inline uint64_t now_ns(void) {
     _key;                                                                      \
   })
 
-// static bool jq_accepts(const char *buf, size_t len) {
-//   /*#region*/
-//   int inpipe[2];
-//   int pid;
+typedef struct {
+  char **paths;
+  size_t count;
+  size_t capacity;
+} FilePathList;
 
-//   if (pipe(inpipe) != 0)
-//     return false;
+#define MAX_PATH_LENGTH 1024
+#define INITIAL_CAPACITY 16
 
-//   pid = fork();
-//   if (pid == 0) {
-//     /* child */
-//     dup2(inpipe[0], STDIN_FILENO);
-//     close(inpipe[0]);
-//     close(inpipe[1]);
+bool file_path_list_add(FilePathList *list, const char *path) {
+  /*#region*/
+  if (list->count == list->capacity) {
+    size_t new_capacity = list->capacity * 2;
+    char **new_paths =
+        (char **)realloc(list->paths, new_capacity * sizeof(char *));
 
-//     execlp("jq", "jq", "-e", "-s",
-//            "length == 1 and (.[0] | type == \"object\")", NULL);
-//     _exit(1);
-//   }
+    if (new_paths == NULL) {
+      return false; // Reallocation failed
+    }
+    list->paths = new_paths;
+    list->capacity = new_capacity;
+  }
 
-//   /* parent */
-//   close(inpipe[0]);
-//   ssize_t k = write(inpipe[1], buf, len);
-//   (void)(k);
-//   close(inpipe[1]);
+  // Duplicate the string and store the heap pointer
+  list->paths[list->count] = strdup(path);
+  if (list->paths[list->count] == NULL) {
+    return false; // strdup failed
+  }
+  list->count++;
+  return true;
+  /*#endregion*/
+}
 
-//   int status;
-//   waitpid(pid, &status, 0);
+void list_files_recursive_helper(const char *basePath, FilePathList *list) {
+  /*#region*/
+  char path[MAX_PATH_LENGTH];
+  struct dirent *dp;
+  DIR *dir = NULL;
 
-//   return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-//   /*#endregion*/
-// }
+  dir = opendir(basePath);
+  if (!dir) {
+    // Log the error but continue execution
+    fprintf(stderr, "Warning: Could not open directory %s: %s\n", basePath,
+            strerror(errno));
+    return;
+  }
+
+  while ((dp = readdir(dir)) != NULL) {
+    const char *filename = dp->d_name;
+
+    // Skip current (.) and parent (..) directories
+    if (strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
+      continue;
+    }
+
+    // Construct the full path
+    if (snprintf(path, sizeof(path), "%s/%s", basePath, filename) >=
+        (int)sizeof(path)) {
+      // Path buffer overflow (handle gracefully)
+      fprintf(stderr, "Warning: Path exceeded MAX_PATH_LENGTH: %s/%s\n",
+              basePath, filename);
+      continue;
+    }
+
+    if (dp->d_type == DT_DIR) {
+      // Recurse into subdirectory
+      list_files_recursive_helper(path, list);
+
+    } else if (dp->d_type == DT_REG) {
+      // --- NEW: Check for .txt extension ---
+      size_t name_len = strlen(filename);
+
+      // Check if the filename is long enough to contain ".txt" (at least 4
+      // characters)
+      if (name_len >= 4 && strcmp(filename + name_len - 4, ".txt") == 0) {
+        // Ignore the file if it ends in ".txt"
+        continue;
+      }
+      // --- END NEW CHECK ---
+
+      // Add regular file path to the dynamic array
+      if (!file_path_list_add(list, path)) {
+        fprintf(stderr, "Error: Failed to allocate memory for path: %s\n",
+                path);
+        // Exit or handle memory allocation failure
+      }
+    }
+  }
+
+  closedir(dir);
+  /*#endregion*/
+}
+
+bool file_path_list_init(FilePathList *list) {
+  /*#region*/
+  list->paths = (char **)malloc(INITIAL_CAPACITY * sizeof(char *));
+  if (list->paths == NULL) {
+    list->count = 0;
+    list->capacity = 0;
+    return false;
+  }
+  list->count = 0;
+  list->capacity = INITIAL_CAPACITY;
+  return true;
+  /*#endregion*/
+}
+
+void file_path_list_free(FilePathList *list) {
+  /*#region*/
+  if (!list)
+    return;
+  for (size_t i = 0; i < list->count; i++) {
+    free(list->paths[i]); // Free the path string itself
+  }
+  free(list->paths); // Free the array of pointers
+  list->paths = NULL;
+  list->count = 0;
+  list->capacity = 0;
+  /*#endregion*/
+}
+
+FilePathList file_list_recursively(const char *basePath) {
+  FilePathList list;
+  /*#region*/
+  if (!file_path_list_init(&list)) {
+    fprintf(stderr, "Fatal Error: Failed to initialize file path list.\n");
+    // Return an empty, initialized list on failure
+    list.paths = NULL;
+    list.count = 0;
+    list.capacity = 0;
+    return list;
+  }
+
+  list_files_recursive_helper(basePath, &list);
+  return list;
+  /*#endregion*/
+}
+
+unsigned char *file_read(const char *filename, size_t *out_size) {
+  /*#region*/
+  FILE *fp = fopen(filename, "rb");
+  if (!fp)
+    return NULL;
+
+  // Move to end to determine file size
+  if (fseek(fp, 0, SEEK_END) != 0) {
+    fclose(fp);
+    return NULL;
+  }
+
+  long size = ftell(fp);
+  if (size < 0) {
+    fclose(fp);
+    return NULL;
+  }
+  rewind(fp);
+
+  // Allocate buffer (+1 for NULL terminator)
+  unsigned char *buffer = malloc(size + 1);
+  if (!buffer) {
+    fclose(fp);
+    return NULL;
+  }
+
+  // Read file into buffer
+  size_t read_bytes = fread(buffer, 1, size, fp);
+  fclose(fp);
+
+  if (read_bytes != (size_t)size) {
+    free(buffer);
+    return NULL;
+  }
+
+  buffer[size] = '\0'; // Null terminate
+  if (out_size)
+    *out_size = size;
+
+  return buffer;
+  /*#endregion*/
+}
 
 static char *timestamp_to_string(size_t timestamp) {
   /*#region*/
@@ -108,7 +255,8 @@ static void event_log(Keys key, const char *format, ...) {
   /*#endregion*/
 }
 
-void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Arena *arena) {
+void single_payload(unsigned char *payload, unsigned char *schema_json,
+                    Jsonv_Arena *arena) {
   /*#region*/
   // Allocate a separate arena for the read-only schema compile phase
   Jsonv_Arena *schema_arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
@@ -116,17 +264,15 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
     event_log(Red, "Error: Failed to create schema arena");
     return;
   }
-  
-  Jsonv_Config config = {
-      .default_block_size = 1024,
-      .max_limit = 65536,
-      .shrink_at = 4096,
-      .max_depth = 10,
-      .max_values = 100,
-      .max_objects = 100,
-      .max_array = 100,
-      .max_string_bytes = 1000
-  };
+
+  Jsonv_Config config = {.default_block_size = 1024,
+                         .max_limit = 65536,
+                         .shrink_at = 4096,
+                         .max_depth = 10,
+                         .max_values = 100,
+                         .max_objects = 100,
+                         .max_array = 100,
+                         .max_string_bytes = 1000};
 
   Jsonv_Error err = {0};
   Jsonv_Schema *schema = NULL;
@@ -152,7 +298,8 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
         event_log(Green, "Success: Payload is valid against the schema.");
       } else {
         const Jsonv_Error *v_err = jsonv_ctx_get_error(ctx);
-        event_log(Red, "Validation Error %d: %s at %s", v_err->type, v_err->description, v_err->path ? v_err->path : "");
+        event_log(Red, "Validation Error %d: %s at %s", v_err->type,
+                  v_err->description, v_err->path ? v_err->path : "");
       }
     }
     if (valid) {
@@ -163,7 +310,8 @@ void single_payload(unsigned char *payload, unsigned char *schema_json, Jsonv_Ar
     }
   } else {
     const Jsonv_Error *p_err = jsonv_ctx_get_error(ctx);
-    event_log(Red, "Parse Error %d: %s at %s", p_err->type, p_err->description, p_err->path ? p_err->path : "");
+    event_log(Red, "Parse Error %d: %s at %s", p_err->type, p_err->description,
+              p_err->path ? p_err->path : "");
   }
 
   // Deallocate schema arena to prevent memory leaks
@@ -207,23 +355,23 @@ int main() {
   size_t size;
   unsigned char *schema = file_read("./schema2.json", &size);
 
-  // char data[] = "{"
-  //               "\"name\": \"iphone4\","
-  //               "\"price\": 2,"
-  //               "\"price\": 5,"
-  //               "\"price\": 7,"
-  //               "\"description\": {"
-  //               "   \"forbidden\": \"test\","
-  //               "   \"forbidden\": \"yo\","
-  //               "   \"name\": \"test\","
-  //               "   \"prices\": ["
-  //               "       4, 6"
-  //               "     ]"
-  //               "   }"
-  //               "}";
-  // single_payload((unsigned char *)data, schema, arena);
+  char data[] = "{"
+                "\"name\": \"iphone4\","
+                "\"price\": 2,"
+                "\"price\": 5,"
+                "\"price\": 7,"
+                "\"description\": {"
+                "   \"forbidden\": \"test\","
+                "   \"forbidden\": \"yo\","
+                "   \"name\": \"test\","
+                "   \"prices\": ["
+                "       4, 6"
+                "     ]"
+                "   }"
+                "}";
+  single_payload((unsigned char *)data, schema, arena);
   // single_file("./seed_corpus/valid2.json", schema, arena);
-  multiple_files("./mismatches", schema, arena);
+  // multiple_files("./mismatches", schema, arena);
   // }
 
   uint64_t end = now_ns();

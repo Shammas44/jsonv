@@ -1,5 +1,5 @@
-#ifndef GLOBALS_H
-#define GLOBALS_H
+#ifndef _JSONV_GLOBALS_H
+#define _JSONV_GLOBALS_H
 #include <unistd.h>
 #include "macro.h"
 
