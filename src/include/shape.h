@@ -89,4 +89,25 @@ JSONV_API Jsonv_Value jsonv_arr_val_at(const Jsonv_Arr *a, int index);
  */
 JSONV_API Jsonv_Value jsonv_value_get_path(Jsonv_Value current, const char *fmt, ...);
 
+/**
+ * @brief Serializes a Jsonv_Value into a JSON string.
+ *
+ * If buf is NULL and buf_sz is 0, this function computes and returns the total 
+ * length of the JSON string that would be generated (excluding the null terminator).
+ *
+ * If buf is not NULL and buf_sz > 0, it writes up to `buf_sz - 1` characters to the
+ * buffer, null-terminates the string, and returns the total length of the JSON string 
+ * that would be generated (excluding the null terminator).
+ *
+ * If a serialization error occurs (such as a cycle or invalid value tag), a negative
+ * value (e.g. -1) is returned.
+ *
+ * @param v The value to serialize.
+ * @param buf The output buffer (can be NULL if buf_sz is 0).
+ * @param buf_sz The size of the output buffer.
+ * @return The number of characters that would be written (excluding '\0'), or a negative value on error.
+ */
+JSONV_API int jsonv_serialize(Jsonv_Value v, char *buf, size_t buf_sz);
+
 #endif
+
