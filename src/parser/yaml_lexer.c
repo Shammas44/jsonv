@@ -38,6 +38,12 @@ static Token parse_quoted_string(T *l, char quote) {
   while (l->current_pos < l->source_len) {
     char c = l->source[l->current_pos];
     if (c == quote) {
+      if (quote == '\'' && l->current_pos + 1 < l->source_len && l->source[l->current_pos + 1] == '\'') {
+        // Escaped single quote via doubling ''
+        l->current_pos += 2;
+        l->current_col += 2;
+        continue;
+      }
       size_t len = l->current_pos - start;
       l->current_pos++; // Consume closing quote
       l->current_col++;
@@ -63,8 +69,13 @@ static Token parse_unquoted_scalar(T *l) {
   while (l->current_pos < l->source_len) {
     char c = l->source[l->current_pos];
     
-    // Stop at newline, comment, or flow markers
-    if (is_newline(c) || c == '#' || c == ',' || c == '}' || c == ']') {
+    // Stop at newline or comment
+    if (is_newline(c) || c == '#') {
+      break;
+    }
+
+    // Stop at flow markers only if we are in flow style (nested in { } or [ ])
+    if (l->flow_depth > 0 && (c == ',' || c == '}' || c == ']')) {
       break;
     }
 
@@ -324,6 +335,7 @@ void yaml_lexer_init(T *l, const unsigned char *source, size_t len) {
   l->current_col = 0;
   
   l->has_queued_token = false;
+  l->flow_depth = 0;
   /*#endregion*/
 }
 
@@ -487,10 +499,10 @@ Token yaml_lexer_next_token(T *l) {
 
   // 7. Structural Flow Tokens
   switch (c) {
-    case '{': l->current_pos++; l->current_col++; return (Token){.value = {.string = {token_start, 1}}, T_BRACE_OPEN};
-    case '}': l->current_pos++; l->current_col++; return (Token){.value = {.string = {token_start, 1}}, T_BRACE_CLOSE};
-    case '[': l->current_pos++; l->current_col++; return (Token){.value = {.string = {token_start, 1}}, T_BRACKET_OPEN};
-    case ']': l->current_pos++; l->current_col++; return (Token){.value = {.string = {token_start, 1}}, T_BRACKET_CLOSE};
+    case '{': l->current_pos++; l->current_col++; l->flow_depth++; return (Token){.value = {.string = {token_start, 1}}, T_BRACE_OPEN};
+    case '}': l->current_pos++; l->current_col++; if (l->flow_depth > 0) l->flow_depth--; return (Token){.value = {.string = {token_start, 1}}, T_BRACE_CLOSE};
+    case '[': l->current_pos++; l->current_col++; l->flow_depth++; return (Token){.value = {.string = {token_start, 1}}, T_BRACKET_OPEN};
+    case ']': l->current_pos++; l->current_col++; if (l->flow_depth > 0) l->flow_depth--; return (Token){.value = {.string = {token_start, 1}}, T_BRACKET_CLOSE};
     case ',': l->current_pos++; l->current_col++; return (Token){.value = {.string = {token_start, 1}}, T_COMMA};
     case ':':
       if (l->current_pos + 1 >= l->source_len ||

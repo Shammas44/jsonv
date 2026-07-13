@@ -96,7 +96,7 @@ static void parse_yaml_value(YamlLexer *lexer, Stack *nodes, Stack *scopes,
                              set_t *set, KeyTreePool *key_pool, int *depth, Token *c, Token *n);
 
 static void parse_yaml_block_mapping(YamlLexer *lexer, Stack *nodes, Stack *scopes,
-                                     set_t *set, KeyTreePool *key_pool, int *depth, Token *c, Token *n) {
+                                     set_t *set, KeyTreePool *key_pool, int *depth, Token *c, Token *n, bool is_inline) {
   /*#region*/
   // Create AST_OBJECT Node
   Token obj_token = *c;
@@ -111,8 +111,34 @@ static void parse_yaml_block_mapping(YamlLexer *lexer, Stack *nodes, Stack *scop
   PUSH(scopes, -1);        // Tail
   PUSH(scopes, 0);         // Count
 
-  while (c->type != T_YAML_DEDENT && c->type != T_YAML_BULLET && c->type != T_EOF) {
-    if (c->type != T_STRING) {
+  int indent_count = 0;
+
+  while (c->type != T_EOF) {
+    if (c->type == T_YAML_INDENT) {
+      if (is_inline && indent_count == 0) {
+        *c = *n;
+        *n = yaml_lexer_next_token(lexer);
+        indent_count = 1;
+        continue;
+      } else {
+        break;
+      }
+    }
+
+    if (c->type == T_YAML_DEDENT) {
+      if (is_inline && indent_count == 1) {
+        *c = *n;
+        *n = yaml_lexer_next_token(lexer);
+        indent_count = 0;
+      }
+      break;
+    }
+
+    if (c->type == T_YAML_BULLET) {
+      break;
+    }
+
+    if (c->type != T_STRING && c->type != T_NUMBER && c->type != T_TRUE && c->type != T_FALSE && c->type != T_NULL) {
       RAISE(MALFORMED_JSON);
     }
 
@@ -145,7 +171,7 @@ static void parse_yaml_block_mapping(YamlLexer *lexer, Stack *nodes, Stack *scop
 }
 
 static void parse_yaml_block_sequence(YamlLexer *lexer, Stack *nodes, Stack *scopes,
-                                      set_t *set, KeyTreePool *key_pool, int *depth, Token *c, Token *n) {
+                                      set_t *set, KeyTreePool *key_pool, int *depth, Token *c, Token *n, bool is_inline) {
   /*#region*/
   // Create AST_ARRAY Node
   Token arr_token = *c;
@@ -160,9 +186,31 @@ static void parse_yaml_block_sequence(YamlLexer *lexer, Stack *nodes, Stack *sco
   PUSH(scopes, -1);        // Tail
   PUSH(scopes, 0);         // Count
 
-  while (c->type != T_YAML_DEDENT && c->type != T_EOF) {
+  int indent_count = 0;
+
+  while (c->type != T_EOF) {
+    if (c->type == T_YAML_INDENT) {
+      if (is_inline && indent_count == 0) {
+        *c = *n;
+        *n = yaml_lexer_next_token(lexer);
+        indent_count = 1;
+        continue;
+      } else {
+        break;
+      }
+    }
+
+    if (c->type == T_YAML_DEDENT) {
+      if (is_inline && indent_count == 1) {
+        *c = *n;
+        *n = yaml_lexer_next_token(lexer);
+        indent_count = 0;
+      }
+      break;
+    }
+
     if (c->type != T_YAML_BULLET) {
-      RAISE(MALFORMED_JSON);
+      break;
     }
 
     // Consume bullet
@@ -284,9 +332,9 @@ static void parse_yaml_value(YamlLexer *lexer, Stack *nodes, Stack *scopes,
     *n = yaml_lexer_next_token(lexer);
 
     if (c->type == T_YAML_BULLET) {
-      parse_yaml_block_sequence(lexer, nodes, scopes, set, key_pool, depth, c, n);
+      parse_yaml_block_sequence(lexer, nodes, scopes, set, key_pool, depth, c, n, false);
     } else {
-      parse_yaml_block_mapping(lexer, nodes, scopes, set, key_pool, depth, c, n);
+      parse_yaml_block_mapping(lexer, nodes, scopes, set, key_pool, depth, c, n, false);
     }
 
     if (c->type != T_YAML_DEDENT && c->type != T_EOF) {
@@ -299,11 +347,11 @@ static void parse_yaml_value(YamlLexer *lexer, Stack *nodes, Stack *scopes,
     }
   }
   else if (c->type == T_YAML_BULLET) {
-    parse_yaml_block_sequence(lexer, nodes, scopes, set, key_pool, depth, c, n);
+    parse_yaml_block_sequence(lexer, nodes, scopes, set, key_pool, depth, c, n, true);
   }
   else if (c->type == T_STRING || c->type == T_NUMBER || c->type == T_TRUE || c->type == T_FALSE || c->type == T_NULL) {
     if (n->type == T_COLON) {
-      parse_yaml_block_mapping(lexer, nodes, scopes, set, key_pool, depth, c, n);
+      parse_yaml_block_mapping(lexer, nodes, scopes, set, key_pool, depth, c, n, true);
     } else {
       ASTNode leaf = new_node(AST_LEAF, *c);
       stack_push(nodes, &leaf);

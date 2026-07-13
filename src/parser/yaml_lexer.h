@@ -30,6 +30,9 @@ typedef struct YamlLexer {
   // Token buffer for virtual tokens or lookahead
   Token queued_token;
   bool has_queued_token;
+
+  // Flow style nesting tracker
+  int flow_depth;
 } YamlLexer;
 
 void yaml_lexer_init(YamlLexer *l, const unsigned char *source, size_t len);

@@ -276,5 +276,94 @@ TIMED_TEST(T, parse_block_scalars, init, fini)
   cr_expect_str_eq(normal.as.p, "string");
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, parse_nested_sequences, init, fini)
+/*#region*/
+  const char *yaml =
+      "- - item1\n"
+      "  - item2\n"
+      "- - item3\n";
+
+  cr_assert(jsonv_ctx_parse_yaml_data(ctx, (const unsigned char *)yaml));
+
+  Jsonv_Value val;
+  cr_assert(jsonv_ctx_get_value(ctx, &val));
+  cr_assert_eq(val.tag, JSONV_VAL_ARRAY);
+
+  char debug_buf[512];
+  jsonv_serialize(val, debug_buf, sizeof(debug_buf));
+  cr_assert_eq(jsonv_arr_length(val.as.p), 2, "Expected outer length 2, got %d. Serialized: %s", jsonv_arr_length(val.as.p), debug_buf);
+
+  // First element is [item1, item2]
+  Jsonv_Value subarr1;
+  cr_assert(jsonv_arr_get(val.as.p, 0, &subarr1));
+  cr_assert_eq(subarr1.tag, JSONV_VAL_ARRAY);
+  cr_assert_eq(jsonv_arr_length(subarr1.as.p), 2);
+
+  Jsonv_Value item;
+  cr_assert(jsonv_arr_get(subarr1.as.p, 0, &item));
+  cr_expect_str_eq(item.as.p, "item1");
+
+  cr_assert(jsonv_arr_get(subarr1.as.p, 1, &item));
+  cr_expect_str_eq(item.as.p, "item2");
+
+  // Second element is [item3]
+  Jsonv_Value subarr2;
+  cr_assert(jsonv_arr_get(val.as.p, 1, &subarr2));
+  cr_assert_eq(subarr2.tag, JSONV_VAL_ARRAY);
+  cr_assert_eq(jsonv_arr_length(subarr2.as.p), 1);
+
+  cr_assert(jsonv_arr_get(subarr2.as.p, 0, &item));
+  cr_expect_str_eq(item.as.p, "item3");
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, parse_unquoted_commas, init, fini)
+/*#region*/
+  const char *yaml =
+      "description: hello, world! {nice}\n"
+      "items:\n"
+      "  - a, b, c\n";
+
+  cr_assert(jsonv_ctx_parse_yaml_data(ctx, (const unsigned char *)yaml));
+
+  Jsonv_Value val;
+  cr_assert(jsonv_ctx_get_value(ctx, &val));
+  cr_assert_eq(val.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value desc;
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "description"), &desc));
+  cr_assert_eq(desc.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(desc.as.p, "hello, world! {nice}");
+
+  Jsonv_Value items;
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "items"), &items));
+  cr_assert_eq(items.tag, JSONV_VAL_ARRAY);
+
+  Jsonv_Value item;
+  cr_assert(jsonv_arr_get(items.as.p, 0, &item));
+  cr_expect_str_eq(item.as.p, "a, b, c");
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, parse_single_quote_escapes, init, fini)
+/*#region*/
+  const char *yaml =
+      "msg: 'It''s a great day'\n";
+
+  cr_assert(jsonv_ctx_parse_yaml_data(ctx, (const unsigned char *)yaml));
+
+  Jsonv_Value val;
+  cr_assert(jsonv_ctx_get_value(ctx, &val));
+  cr_assert_eq(val.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value msg;
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "msg"), &msg));
+  cr_assert_eq(msg.tag, JSONV_VAL_STRING);
+  // Note: the zero-copy slice preserves the raw source representation including ''
+  cr_expect_str_eq(msg.as.p, "It''s a great day");
+/*#endregion*/
+END_TIMED_TEST
+
 #endif // JSONV_YAML_SUPPORT
 
