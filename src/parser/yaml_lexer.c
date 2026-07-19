@@ -366,10 +366,35 @@ static Token yaml_lexer_next_token_internal(T *l) {
   if (l->is_line_start) {
     l->is_line_start = false;
 
-    // Scan lines until we find a non-empty, non-comment line
-    while (l->current_pos < l->source_len) {
-      size_t line_start_pos = l->current_pos;
-      int indent = 0;
+    if (l->flow_depth > 0) {
+      while (l->current_pos < l->source_len) {
+        while (l->current_pos < l->source_len && (l->source[l->current_pos] == ' ' || l->source[l->current_pos] == '\t')) {
+          l->current_pos++;
+        }
+        if (l->current_pos >= l->source_len) break;
+        char c = l->source[l->current_pos];
+        if (is_newline(c) || c == '#') {
+          while (l->current_pos < l->source_len && !is_newline(l->source[l->current_pos])) {
+            l->current_pos++;
+          }
+          if (l->current_pos < l->source_len) {
+            char nl = l->source[l->current_pos];
+            l->current_pos++;
+            if (nl == '\r' && l->current_pos < l->source_len && l->source[l->current_pos] == '\n') {
+              l->current_pos++;
+            }
+          }
+          l->current_line++;
+          l->current_col = 0;
+          continue;
+        }
+        break;
+      }
+    } else {
+      // Scan lines until we find a non-empty, non-comment line
+      while (l->current_pos < l->source_len) {
+        size_t line_start_pos = l->current_pos;
+        int indent = 0;
 
       // Count leading spaces
       while (l->current_pos < l->source_len) {
@@ -451,6 +476,7 @@ static Token yaml_lexer_next_token_internal(T *l) {
       // indent == prev_indent: no change in nesting
       break;
     }
+  }
   }
 
   // 3. Skip inline spaces

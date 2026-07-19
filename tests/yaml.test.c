@@ -456,6 +456,48 @@ TIMED_TEST(T, parse_empty_values, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, parse_yaml_with_comments, init, fini)
+/*#region*/
+  const char *yaml =
+      "# Comment at start\n"
+      "version: 2.0.0 # inline comment\n"
+      "name: SWAPI Starship Fleet Concurrency\n"
+      "'on': {\n"
+      "  # comment inside flow map\n"
+      "  manual: {}\n"
+      "}\n"
+      "jobs:\n"
+      "  # Comment line inside map\n"
+      "  fork_queries:\n"
+      "    type: fork\n"
+      "    branches:\n"
+      "    - fetch_xwing # comment on list item\n"
+      "    # comment inside list\n"
+      "    - fetch_falcon\n";
+
+  bool success = jsonv_ctx_parse_yaml_data(ctx, (const unsigned char *)yaml);
+  cr_assert(success, "Failed to parse YAML with comments: %s", jsonv_ctx_get_error(ctx)->description);
+
+  Jsonv_Value val;
+  cr_assert(jsonv_ctx_get_value(ctx, &val));
+  cr_assert_eq(val.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value version, name, on_val;
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "version"), &version));
+  cr_expect_str_eq(version.as.p, "2.0.0");
+
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "name"), &name));
+  cr_expect_str_eq(name.as.p, "SWAPI Starship Fleet Concurrency");
+
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "on"), &on_val));
+  cr_assert_eq(on_val.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value manual;
+  cr_assert(jsonv_obj_get(on_val.as.p, make_temp_lstr(arena, "manual"), &manual));
+  cr_assert_eq(manual.tag, JSONV_VAL_OBJ);
+/*#endregion*/
+END_TIMED_TEST
+
 #endif // JSONV_YAML_SUPPORT
 
 
