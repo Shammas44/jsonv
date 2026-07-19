@@ -26,7 +26,7 @@ Obj *obj_new(Jsonv_Arena *arena, Shape *root) {
     o = (Obj *)jsonv_arena_alloc(arena, sizeof(Obj));
     if (!o) return NULL;
   }
-  o->shape = root;
+  o->shape = root ? root : shape_root();
   o->slots = NULL;
   o->capacity = 0;
   o->refcount = 0;

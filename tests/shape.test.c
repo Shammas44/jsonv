@@ -152,6 +152,27 @@ cr_expect_float_eq(out_price.as.d, 99.95, 1e-9);
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, obj_creation_with_null_shape_falls_back_to_root, init, fini)
+/*#region*/
+Obj *obj = obj_new(arena, NULL);
+cr_assert_not_null(obj, "Obj allocation with NULL root should succeed");
+cr_expect_eq(obj_get_shape(obj), root, "Initial object shape should fallback to root");
+
+const char *k_name = make_temp_lstr(arena, "name");
+Value v_name = val_str(make_temp_lstr(arena, "Nestor"));
+
+// Property writes should proceed without crashing
+obj_set(arena, obj, k_name, v_name);
+cr_expect_eq(shape_get_slot_count(obj_get_shape(obj)), 1);
+
+Value out_name = val_undefined();
+cr_assert(obj_get(obj, k_name, &out_name), "Should retrieve name");
+cr_expect_eq(out_name.tag, VAL_STRING);
+cr_expect_str_eq(out_name.as.p, "Nestor");
+/*#endregion*/
+END_TIMED_TEST
+
+
 // -----------------------------------------------------------------------------
 // SAFETY LIMITS / OOM GRACEFUL FAILURES
 // -----------------------------------------------------------------------------
