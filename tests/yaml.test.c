@@ -365,5 +365,97 @@ TIMED_TEST(T, parse_single_quote_escapes, init, fini)
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, parse_complex_nested_structures, init, fini)
+/*#region*/
+  const char *yaml =
+      "outer_list:\n"
+      "  - key1: val1\n"
+      "    key2: val2\n"
+      "  - key3: val3\n"
+      "    key4:\n"
+      "      nested_key: nested_val\n";
+
+  bool success = jsonv_ctx_parse_yaml_data(ctx, (const unsigned char *)yaml);
+  cr_assert(success);
+
+  Jsonv_Value val;
+  cr_assert(jsonv_ctx_get_value(ctx, &val));
+  cr_assert_eq(val.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value list_val;
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "outer_list"), &list_val));
+  cr_assert_eq(list_val.tag, JSONV_VAL_ARRAY);
+  cr_assert_eq(jsonv_arr_length(list_val.as.p), 2);
+
+  // First item: {key1: val1, key2: val2}
+  Jsonv_Value map0;
+  cr_assert(jsonv_arr_get(list_val.as.p, 0, &map0));
+  cr_assert_eq(map0.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value k1, k2;
+  cr_assert(jsonv_obj_get(map0.as.p, make_temp_lstr(arena, "key1"), &k1));
+  cr_assert_eq(k1.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(k1.as.p, "val1");
+
+  cr_assert(jsonv_obj_get(map0.as.p, make_temp_lstr(arena, "key2"), &k2));
+  cr_assert_eq(k2.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(k2.as.p, "val2");
+
+  // Second item: {key3: val3, key4: {nested_key: nested_val}}
+  Jsonv_Value map1;
+  cr_assert(jsonv_arr_get(list_val.as.p, 1, &map1));
+  cr_assert_eq(map1.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value k3, k4;
+  cr_assert(jsonv_obj_get(map1.as.p, make_temp_lstr(arena, "key3"), &k3));
+  cr_expect_str_eq(k3.as.p, "val3");
+
+  cr_assert(jsonv_obj_get(map1.as.p, make_temp_lstr(arena, "key4"), &k4));
+  cr_assert_eq(k4.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value nested;
+  cr_assert(jsonv_obj_get(k4.as.p, make_temp_lstr(arena, "nested_key"), &nested));
+  cr_expect_str_eq(nested.as.p, "nested_val");
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, parse_empty_values, init, fini)
+/*#region*/
+  const char *yaml =
+      "key1:\n"
+      "key2: val2\n"
+      "key3:\n"
+      "  nested_empty:\n"
+      "  nested_val: val3\n";
+
+  bool success = jsonv_ctx_parse_yaml_data(ctx, (const unsigned char *)yaml);
+  cr_assert(success, "Failed to parse YAML. Error: %s", jsonv_ctx_get_error(ctx)->description);
+
+  Jsonv_Value val;
+  cr_assert(jsonv_ctx_get_value(ctx, &val));
+  cr_assert_eq(val.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value k1, k2, k3;
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "key1"), &k1));
+  cr_assert_eq(k1.tag, JSONV_VAL_NULL);
+
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "key2"), &k2));
+  cr_assert_eq(k2.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(k2.as.p, "val2");
+
+  cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "key3"), &k3));
+  cr_assert_eq(k3.tag, JSONV_VAL_OBJ);
+
+  Jsonv_Value nested_empty, nested_val;
+  cr_assert(jsonv_obj_get(k3.as.p, make_temp_lstr(arena, "nested_empty"), &nested_empty));
+  cr_assert_eq(nested_empty.tag, JSONV_VAL_NULL);
+
+  cr_assert(jsonv_obj_get(k3.as.p, make_temp_lstr(arena, "nested_val"), &nested_val));
+  cr_assert_eq(nested_val.tag, JSONV_VAL_STRING);
+  cr_expect_str_eq(nested_val.as.p, "val3");
+/*#endregion*/
+END_TIMED_TEST
+
 #endif // JSONV_YAML_SUPPORT
+
 

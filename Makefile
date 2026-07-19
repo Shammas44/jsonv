@@ -47,7 +47,7 @@ AFL_CC := afl-clang-lto
 AFL_CFLAGS := -Wall -Wextra -Werror -g -fPIC -O3
 
 # --- Build Options ---
-BASE_CFLAGS := -Wall -Wextra -Werror -fvisibility=hidden -fPIC
+BASE_CFLAGS := -Wall -Wextra -Werror -Wno-missing-field-initializers -fvisibility=hidden -fPIC
 ifeq ($(OPTION), prod)
   CFLAGS := $(BASE_CFLAGS) -O2
 else ifeq ($(OPTION), dev)

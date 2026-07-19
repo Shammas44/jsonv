@@ -26,6 +26,7 @@ typedef struct YamlLexer {
   bool is_line_start;
   int current_line;
   int current_col;
+  bool on_new_line;
 
   // Token buffer for virtual tokens or lookahead
   Token queued_token;

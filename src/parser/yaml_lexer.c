@@ -223,6 +223,7 @@ static Token parse_block_scalar(T *l, char type) {
       // Indentation is not deeper than parent context; block is empty
       l->current_pos = line_pos;
       l->is_line_start = true;
+      l->on_new_line = true;
       return (Token){.value = {.string = {l->source + line_pos, 0}}, T_STRING};
     }
     
@@ -248,6 +249,7 @@ static Token parse_block_scalar(T *l, char type) {
   if (block_indent == -1) {
     // Reached EOF without any non-empty content lines
     l->is_line_start = true;
+    l->on_new_line = true;
     return (Token){.value = {.string = {l->source + l->source_len, 0}}, T_STRING};
   }
   
@@ -306,6 +308,7 @@ static Token parse_block_scalar(T *l, char type) {
       block_end = line_pos;
       l->current_pos = line_pos;
       l->is_line_start = true;
+      l->on_new_line = true;
       return (Token){.value = {.string = {l->source + block_start, block_end - block_start}}, T_STRING};
     }
   }
@@ -313,6 +316,7 @@ static Token parse_block_scalar(T *l, char type) {
   // Reached EOF: terminate the block at the end of the source buffer
   block_end = l->source_len;
   l->is_line_start = true;
+  l->on_new_line = true;
   return (Token){.value = {.string = {l->source + block_start, block_end - block_start}}, T_STRING};
   /*#endregion*/
 }
@@ -333,13 +337,16 @@ void yaml_lexer_init(T *l, const unsigned char *source, size_t len) {
   l->is_line_start = true;
   l->current_line = 1;
   l->current_col = 0;
+  l->on_new_line = true;
   
   l->has_queued_token = false;
   l->flow_depth = 0;
   /*#endregion*/
 }
 
-Token yaml_lexer_next_token(T *l) {
+
+
+static Token yaml_lexer_next_token_internal(T *l) {
   /*#region*/
   // 1. Return any queued virtual dedent/indent tokens first
   if (l->pending_dedents > 0) {
@@ -469,9 +476,10 @@ Token yaml_lexer_next_token(T *l) {
       l->current_pos++;
     }
     l->is_line_start = true;
+    l->on_new_line = true;
     l->current_line++;
     l->current_col = 0;
-    return yaml_lexer_next_token(l);
+    return yaml_lexer_next_token_internal(l);
   }
 
   if (is_newline(c)) {
@@ -480,9 +488,10 @@ Token yaml_lexer_next_token(T *l) {
       l->current_pos++;
     }
     l->is_line_start = true;
+    l->on_new_line = true;
     l->current_line++;
     l->current_col = 0;
-    return yaml_lexer_next_token(l);
+    return yaml_lexer_next_token_internal(l);
   }
 
   // 6. YAML Bullet / Sequence Item
@@ -529,5 +538,22 @@ Token yaml_lexer_next_token(T *l) {
   // 9. Unquoted Scalar
   return parse_unquoted_scalar(l);
   /*#endregion*/
+}
+
+Token yaml_lexer_next_token(T *l) {
+  if (l->is_line_start) {
+    l->on_new_line = true;
+  }
+  bool start_on_new_line = l->on_new_line;
+  Token tok = yaml_lexer_next_token_internal(l);
+  if (tok.type == T_STRING && l->is_line_start) {
+    tok.on_new_line = start_on_new_line;
+  } else {
+    tok.on_new_line = l->on_new_line;
+  }
+  if (tok.type != T_YAML_INDENT && tok.type != T_YAML_DEDENT) {
+    l->on_new_line = false;
+  }
+  return tok;
 }
 #endif // JSONV_YAML_SUPPORT

@@ -1,6 +1,7 @@
 #ifndef _JSONV_TOKEN_H
 #define _JSONV_TOKEN_H
 #include <stdio.h>
+#include <stdbool.h>
 
 typedef enum {
   // CONTROL
@@ -39,6 +40,7 @@ typedef enum {
 typedef struct {
   TokenValue value;
   TokenType type;
+  bool on_new_line;
 } Token;
 
 #endif

@@ -227,13 +227,27 @@ static void parse_yaml_block_sequence(YamlLexer *lexer, Stack *nodes, Stack *sco
   stack_pop(scopes); // Parent
   /*#endregion*/
 }
-
 static void parse_yaml_value(YamlLexer *lexer, Stack *nodes, Stack *scopes,
                              set_t *set, KeyTreePool *key_pool, int *depth, Token *c, Token *n) {
   /*#region*/
   (*depth)++;
   if (*depth > MAX_YAML_DEPTH) {
     RAISE(MAXIMUM_NESTED_DEPTH_REACHED);
+  }
+
+  // Check for empty/omitted value (null)
+  if (c->type == T_YAML_DEDENT || c->type == T_EOF ||
+      (*depth > 1 && c->on_new_line && c->type != T_YAML_INDENT && c->type != T_BRACE_OPEN && c->type != T_BRACKET_OPEN)) {
+    Token null_token = {
+      .type = T_NULL,
+      .value = {0},
+      .on_new_line = false
+    };
+    ASTNode leaf = new_node(AST_LEAF, null_token);
+    stack_push(nodes, &leaf);
+    link_node_to_scope(nodes, scopes, nodes->top, set, key_pool);
+    (*depth)--;
+    return;
   }
 
   if (c->type == T_BRACE_OPEN) {
