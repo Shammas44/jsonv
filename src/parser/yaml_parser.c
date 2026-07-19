@@ -235,9 +235,24 @@ static void parse_yaml_value(YamlLexer *lexer, Stack *nodes, Stack *scopes,
     RAISE(MAXIMUM_NESTED_DEPTH_REACHED);
   }
 
+  bool is_parent_array = false;
+  if (scopes->top >= 2) {
+    int parent_idx = PEEK_INT(scopes, 2);
+    if (parent_idx >= 0 && parent_idx <= nodes->top) {
+      ASTNode *pool = (ASTNode *)nodes->data;
+      if (pool[parent_idx].type == AST_ARRAY) {
+        is_parent_array = true;
+      }
+    }
+  }
+
   // Check for empty/omitted value (null)
   if (c->type == T_YAML_DEDENT || c->type == T_EOF ||
-      (*depth > 1 && c->on_new_line && c->type != T_YAML_INDENT && c->type != T_BRACE_OPEN && c->type != T_BRACKET_OPEN)) {
+      (*depth > 1 && c->on_new_line &&
+       c->type != T_YAML_INDENT &&
+       c->type != T_BRACE_OPEN &&
+       c->type != T_BRACKET_OPEN &&
+       (c->type != T_YAML_BULLET || is_parent_array))) {
     Token null_token = {
       .type = T_NULL,
       .value = {0},
