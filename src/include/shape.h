@@ -24,7 +24,8 @@ typedef enum {
   JSONV_VAL_BOOLEAN = 7,
   JSONV_VAL_STRING = 8,
   JSONV_VAL_UNRESOLVABLE = 9,
-  JSONV_VAL_IMPOSSIBLE = 10
+  JSONV_VAL_IMPOSSIBLE = 10,
+  JSONV_VAL_BIGNUM = 11
 } Jsonv_ValueTag;
 
 typedef struct Jsonv_Value {
@@ -41,6 +42,7 @@ typedef struct Jsonv_Value {
 JSONV_API Jsonv_Value jsonv_val_undefined(void);
 JSONV_API Jsonv_Value jsonv_val_int(int64_t x);
 JSONV_API Jsonv_Value jsonv_val_double(double x);
+JSONV_API Jsonv_Value jsonv_val_bignum(const char *raw_num_str);
 JSONV_API Jsonv_Value jsonv_val_bool(bool x);
 JSONV_API Jsonv_Value jsonv_val_null(void);
 JSONV_API Jsonv_Value jsonv_val_str(const char *x);
@@ -48,6 +50,9 @@ JSONV_API Jsonv_Value jsonv_val_obj(Jsonv_Obj *x);
 JSONV_API Jsonv_Value jsonv_val_arr(Jsonv_Arr *x);
 
 JSONV_API size_t jsonv_val_str_len(Jsonv_Value v);
+JSONV_API bool jsonv_val_get_double(Jsonv_Value v, double *out);
+JSONV_API bool jsonv_val_get_int64(Jsonv_Value v, int64_t *out);
+JSONV_API bool jsonv_val_get_raw_number(Jsonv_Value v, const char **out_str, size_t *out_len);
 
 // Public Object Operations
 JSONV_API Jsonv_Obj* jsonv_obj_new(Jsonv_Arena *arena, Jsonv_Shape *root);

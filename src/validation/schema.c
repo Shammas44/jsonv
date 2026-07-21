@@ -46,10 +46,14 @@ static bool token_equals(Token t, const char *str) {
   /*#endregion*/
 }
 
-static double parse_number(Token t) {
+static inline double parse_number(Token t) {
   /*#region*/
   if (t.type == T_NUMBER) {
-    return t.value.number;
+    char buf[128];
+    size_t len = t.value.raw_number.length < sizeof(buf) - 1 ? t.value.raw_number.length : sizeof(buf) - 1;
+    memcpy(buf, t.value.raw_number.start, len);
+    buf[len] = '\0';
+    return strtod(buf, NULL);
   }
   return 0.0;
   /*#endregion*/
@@ -1141,7 +1145,7 @@ void print_token(Token t) {
       printf("\"%.*s\"", (int)len, start);
     }
   } else if (t.type == T_NUMBER) {
-    printf("%g", t.value.number);
+    printf("%.*s", (int)t.value.raw_number.length, (const char *)t.value.raw_number.start);
   } else if (t.type == T_TRUE) {
     printf("true");
   } else if (t.type == T_FALSE) {

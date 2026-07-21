@@ -120,9 +120,9 @@ static Token parse_unquoted_scalar(T *l) {
     buf[len] = '\0';
     char *endptr;
     errno = 0;
-    double d = strtod(buf, &endptr);
+    strtod(buf, &endptr);
     if (endptr != buf && *endptr == '\0' && errno == 0) {
-      return (Token){.value = {.number = d}, T_NUMBER};
+      return (Token){.value = {.raw_number = {str_start, len}}, .type = T_NUMBER, .has_escape = false};
     }
   }
 

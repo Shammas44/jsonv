@@ -18,25 +18,43 @@ void key_tree_clear(KeyTreePool *self) {
   /*#endregion*/
 }
 
+#include "unescape.h"
+
 // Compares two token strings directly from the AST pool
 static int compare_keys(ASTNode *pool, int key1_idx, int key2_idx) {
   /*#region*/
   Token t1 = pool[key1_idx].token;
   Token t2 = pool[key2_idx].token;
 
-  int len1 = t1.value.string.length;
-  int len2 = t2.value.string.length;
-  int min_len = len1 < len2 ? len1 : len2;
+  if (!t1.has_escape && !t2.has_escape) {
+    int len1 = t1.value.string.length;
+    int len2 = t2.value.string.length;
+    int min_len = len1 < len2 ? len1 : len2;
 
-  // Compare character by character
-  int cmp = strncmp((const char *)t1.value.string.start,
-                    (const char *)t2.value.string.start, min_len);
-  // printf("%.*s : %.*s \n", min_len,t1.value.string.start, min_len, t2.value.string.start);
-
-  // If strings are identical up to min_len, the shorter string comes first
-  if (cmp == 0) {
-    return len1 - len2;
+    int cmp = strncmp((const char *)t1.value.string.start,
+                      (const char *)t2.value.string.start, min_len);
+    if (cmp == 0) {
+      return len1 - len2;
+    }
+    return cmp;
   }
+
+  char buf1_stack[256], buf2_stack[256];
+  char *u1 = (t1.value.string.length + 1 <= sizeof(buf1_stack)) ? buf1_stack : (char *)malloc(t1.value.string.length + 1);
+  char *u2 = (t2.value.string.length + 1 <= sizeof(buf2_stack)) ? buf2_stack : (char *)malloc(t2.value.string.length + 1);
+
+  size_t ulen1 = t1.has_escape ? jsonv_unescape_string(t1.value.string.start, t1.value.string.length, u1) : (memcpy(u1, t1.value.string.start, t1.value.string.length), u1[t1.value.string.length] = '\0', t1.value.string.length);
+  size_t ulen2 = t2.has_escape ? jsonv_unescape_string(t2.value.string.start, t2.value.string.length, u2) : (memcpy(u2, t2.value.string.start, t2.value.string.length), u2[t2.value.string.length] = '\0', t2.value.string.length);
+
+  size_t min_len = ulen1 < ulen2 ? ulen1 : ulen2;
+  int cmp = strncmp(u1, u2, min_len);
+  if (cmp == 0) {
+    cmp = (int)ulen1 - (int)ulen2;
+  }
+
+  if (u1 != buf1_stack) free(u1);
+  if (u2 != buf2_stack) free(u2);
+
   return cmp;
   /*#endregion*/
 }

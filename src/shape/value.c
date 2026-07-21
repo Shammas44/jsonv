@@ -79,6 +79,68 @@ Jsonv_Value jsonv_val_double(double x) {
   /*#endregion*/
 }
 
+Value val_bignum(const char *raw_num_str) {
+  /*#region*/
+  Value v;
+  v.tag = VAL_BIGNUM;
+  v.as.p = (void *)raw_num_str;
+  return v;
+  /*#endregion*/
+}
+
+Jsonv_Value jsonv_val_bignum(const char *raw_num_str) {
+  /*#region*/
+  return val_bignum(raw_num_str);
+  /*#endregion*/
+}
+
+bool jsonv_val_get_double(Jsonv_Value v, double *out) {
+  /*#region*/
+  if (!out) return false;
+  if (v.tag == JSONV_VAL_DOUBLE) {
+    *out = v.as.d;
+    return true;
+  } else if (v.tag == JSONV_VAL_INT) {
+    *out = (double)v.as.i;
+    return true;
+  } else if (v.tag == JSONV_VAL_BIGNUM && v.as.p) {
+    *out = strtod((const char *)v.as.p, NULL);
+    return true;
+  }
+  return false;
+  /*#endregion*/
+}
+
+bool jsonv_val_get_int64(Jsonv_Value v, int64_t *out) {
+  /*#region*/
+  if (!out) return false;
+  if (v.tag == JSONV_VAL_INT) {
+    *out = v.as.i;
+    return true;
+  } else if (v.tag == JSONV_VAL_DOUBLE) {
+    *out = (int64_t)v.as.d;
+    return true;
+  } else if (v.tag == JSONV_VAL_BIGNUM && v.as.p) {
+    *out = (int64_t)strtoll((const char *)v.as.p, NULL, 10);
+    return true;
+  }
+  return false;
+  /*#endregion*/
+}
+
+bool jsonv_val_get_raw_number(Jsonv_Value v, const char **out_str, size_t *out_len) {
+  /*#region*/
+  if (!out_str || !out_len) return false;
+  if (v.tag == JSONV_VAL_BIGNUM && v.as.p) {
+    StringHeader *hdr = (StringHeader *)v.as.p - 1;
+    *out_str = (const char *)v.as.p;
+    *out_len = hdr->length;
+    return true;
+  }
+  return false;
+  /*#endregion*/
+}
+
 Value val_obj(void *x) {
   /*#region*/
   Value v;

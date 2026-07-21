@@ -66,6 +66,7 @@ static inline size_t val_str_len(Jsonv_Value v) {
 #define VAL_STRING JSONV_VAL_STRING
 #define VAL_UNRESOLVABLE JSONV_VAL_UNRESOLVABLE
 #define VAL_IMPOSSIBLE JSONV_VAL_IMPOSSIBLE
+#define VAL_BIGNUM JSONV_VAL_BIGNUM
 
 // Internal-only functions
 void jsonv_shape_clear_global_arena(void);
@@ -97,6 +98,7 @@ void arr_ensure_capacity(Jsonv_Arena *arena, Arr *a, int needed);
 Value val_undefined(void);
 Value val_int(int64_t x);
 Value val_double(double x);
+Value val_bignum(const char *raw_num_str);
 Value val_bool(bool x);
 Value val_null(void);
 Value val_str(const char *x);

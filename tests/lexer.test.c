@@ -79,3 +79,83 @@ run_scenario("\xEF\xBB\xBF{\"key1\": \"value1\"}", S);
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, strict_number_grammar_invalid, init, fini)
+/*#region*/
+static TokenType expected[] = {
+    T_ERROR,
+};
+static char *cases[] = {
+    "+10",
+    "+1",
+    ".5",
+    "0123",
+    "-0123",
+    "00",
+    "1.",
+    "1.e2",
+    "1e",
+    "1e+",
+    "1e-",
+};
+for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+  run_scenario(cases[i], S);
+}
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, strict_number_grammar_valid, init, fini)
+/*#region*/
+static TokenType expected[] = {
+    T_NUMBER,
+};
+static char *cases[] = {
+    "0",
+    "-0",
+    "123",
+    "-123",
+    "3.14159",
+    "-0.001",
+    "1e10",
+    "1E-5",
+    "1.23e+4",
+};
+for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+  run_scenario(cases[i], S);
+}
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, strict_utf8_validation, init, fini)
+/*#region*/
+static TokenType err_expected[] = { T_ERROR };
+static char *invalid_utf8_cases[] = {
+    "\"\xC0\xAF\"",         // Overlong 2-byte
+    "\"\xE0\x80\xAF\"",     // Overlong 3-byte
+    "\"\xED\xA0\x80\"",     // UTF-16 surrogate half U+D800 in UTF-8
+    "\"\xF0\x80\x80\xAF\"", // Overlong 4-byte
+    "\"\xF4\x90\x80\x80\"", // Code point > U+10FFFF
+    "\"\x01\"",             // Control character < 0x20 unescaped
+    "\"\x1F\"",             // Control character < 0x20 unescaped
+    "\"\x80\"",             // Unexpected continuation byte
+    "\"\xC2\"",             // Truncated 2-byte
+    "\"\xE0\xA0\"",         // Truncated 3-byte
+    "\"\xF0\x90\x80\"",     // Truncated 4-byte
+};
+for (size_t i = 0; i < sizeof(invalid_utf8_cases) / sizeof(invalid_utf8_cases[0]); i++) {
+  run_scenario(invalid_utf8_cases[i], err_expected, 1);
+}
+
+static TokenType ok_expected[] = { T_STRING };
+static char *valid_utf8_cases[] = {
+    "\"hello\"",
+    "\"caf\xC3\xA9\"",                     // 2-byte: café
+    "\"\xE6\x97\xA5\xE6\x9C\xAC\xE8\xAA\x9E\"", // 3-byte: 日本語
+    "\"\xF0\x9F\x98\x80\"",                 // 4-byte: 😀
+};
+for (size_t i = 0; i < sizeof(valid_utf8_cases) / sizeof(valid_utf8_cases[0]); i++) {
+  run_scenario(valid_utf8_cases[i], ok_expected, 1);
+}
+/*#endregion*/
+END_TIMED_TEST
+
+

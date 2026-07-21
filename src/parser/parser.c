@@ -2,10 +2,12 @@
 #include "assert.h"
 #include "keytree.h"
 #include "lexer.h"
+#include "unescape.h"
 #include "set.h"
 #include "stack.h"
 #include "arena.internal.h"
 #include "mem.h"
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -138,33 +140,36 @@ static void link_node_to_scope(Stack *nodes, Stack *scopes, int new_node_idx,
   if (pool[parent].token.type == T_BRACE_OPEN) {
     if ((count % 2) == 0) {
 
-#define SCOPED_KEY_SAFE_SIZE 512
-      char scoped_key[SCOPED_KEY_SAFE_SIZE];
-
       Token *t = &pool[new_node_idx].token;
-      int prefix_len =
-          snprintf(scoped_key, SCOPED_KEY_SAFE_SIZE, "%d:", parent);
+      size_t key_len = t->value.string.length;
+      char stack_buf[512];
+      size_t est_prefix_len = 24;
+      size_t needed_buf = est_prefix_len + key_len + 1;
+      char *scoped_key = (needed_buf <= sizeof(stack_buf)) ? stack_buf : (char *)ALLOC(needed_buf);
 
-      if (prefix_len > 0) {
-        size_t key_len = t->value.string.length;
-        size_t total_needed = (size_t)prefix_len + key_len;
-
-        if (total_needed < SCOPED_KEY_SAFE_SIZE && total_needed < MAX_KEY_LEN &&
-            total_needed <= 65535) {
-
+      if (scoped_key) {
+        int prefix_len = snprintf(scoped_key, needed_buf, "%d:", parent);
+        size_t ulen = 0;
+        if (!t->has_escape) {
           memcpy(scoped_key + prefix_len, t->value.string.start, key_len);
-          scoped_key[total_needed] = '\0'; // Fix: Ensure null-termination
+          ulen = key_len;
+        } else {
+          ulen = jsonv_unescape_string(t->value.string.start, key_len, scoped_key + prefix_len);
+        }
+        size_t total_needed = prefix_len + ulen;
+        scoped_key[total_needed] = '\0';
 
+        if (total_needed <= 65535) {
           int result = set_insert(set, scoped_key, (uint16_t)total_needed);
-
           if (result == SET_KEY_ALREADY_EXIST) {
             pool[new_node_idx].type = AST_SKIPPED;
           } else {
-            // Valid key! Insert it into the alphabetical Key Tree for this
-            // object
             pool[parent].key_tree_root = key_tree_insert(
                 key_pool, pool[parent].key_tree_root, new_node_idx, pool);
           }
+        }
+        if (scoped_key != stack_buf) {
+          FREE(scoped_key);
         }
       }
     }
@@ -297,7 +302,7 @@ void parse_ast(Lexer *lexer, Stack *nodes, Stack *scopes, Stack *controls,
     switch (expected) {
     case RULE_JSON:
       PUSH(controls, T_EOF);
-      PUSH(controls, RULE_OBJECT);
+      PUSH(controls, RULE_VALUE);
       break;
 
     case RULE_VALUE:
@@ -451,7 +456,8 @@ void print_ast(Stack *nodes, int index, int indent) {
     case AST_LEAF: {
       switch (node->token.type) {
       case T_NUMBER:
-        printf("LEAF: %f\n", node->token.value.number);
+        printf("LEAF: %.*s\n", (int)node->token.value.raw_number.length,
+               (const char *)node->token.value.raw_number.start);
         break;
       case T_NULL:
         printf("LEAF: null\n");
@@ -486,9 +492,20 @@ int find_property(ASTNode *json_pool, int object_idx, const char *key) {
   while (curr != -1) {
     if (json_pool[curr].type != AST_SKIPPED) {
       Token k = json_pool[curr].token;
-      if (k.value.string.length == key_len &&
-          strncmp((char *)k.value.string.start, key, key_len) == 0) {
-        return json_pool[curr].next_sibling;
+      if (!k.has_escape) {
+        if (k.value.string.length == key_len &&
+            strncmp((char *)k.value.string.start, key, key_len) == 0) {
+          return json_pool[curr].next_sibling;
+        }
+      } else {
+        char stack_buf[256];
+        char *ubuf = (k.value.string.length + 1 <= sizeof(stack_buf)) ? stack_buf : (char *)ALLOC(k.value.string.length + 1);
+        if (ubuf) {
+          size_t ulen = jsonv_unescape_string(k.value.string.start, k.value.string.length, ubuf);
+          bool match = (ulen == key_len && strncmp(ubuf, key, key_len) == 0);
+          if (ubuf != stack_buf) FREE(ubuf);
+          if (match) return json_pool[curr].next_sibling;
+        }
       }
     }
     int val_idx = json_pool[curr].next_sibling;
@@ -602,7 +619,8 @@ void print_ast_alphabetical(ASTNode *pool, KeyTreePool *key_pool, int node_idx,
   case AST_LEAF: {
     switch (node->token.type) {
     case T_NUMBER:
-      printf("%f\n", node->token.value.number);
+      printf("%.*s\n", (int)node->token.value.raw_number.length,
+             (const char *)node->token.value.raw_number.start);
       break;
     case T_NULL:
       printf("null\n");
@@ -625,7 +643,7 @@ void print_ast_alphabetical(ASTNode *pool, KeyTreePool *key_pool, int node_idx,
   /*#endregion*/
 }
 
-static lstr_t arena_alloc_str(Jsonv_Arena *arena, const unsigned char *start, size_t len) {
+static lstr_t arena_alloc_str(Jsonv_Arena *arena, const unsigned char *start, size_t len, bool has_escape) {
   /*#region*/
   // Safe overflow check
   if (len > SIZE_MAX - sizeof(StringHeader) - 1) {
@@ -636,9 +654,15 @@ static lstr_t arena_alloc_str(Jsonv_Arena *arena, const unsigned char *start, si
   if (!str) {
     return NULL;
   }
-  str->length = (uint32_t)len;
-  memcpy(str->data, start, len);
-  str->data[len] = '\0';
+  if (!has_escape) {
+    str->length = (uint32_t)len;
+    memcpy(str->data, start, len);
+    str->data[len] = '\0';
+  } else {
+    size_t unescaped_len = jsonv_unescape_string(start, len, str->data);
+    str->length = (uint32_t)unescaped_len;
+    str->data[unescaped_len] = '\0';
+  }
   return (lstr_t)str->data;
   /*#endregion*/
 }
@@ -652,16 +676,11 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
  
     switch ((int)node->type) {
         case AST_OBJECT: {
-            // Create the runtime object starting from the root shape
             Obj *obj = obj_new(arena, shape_root);
-            
-            // We use a local array to retrieve the sorted keys.
-            // 256 is used for safety, but you can dynamically allocate this if needed.
             #define MAX_OBJ_KEYS 256
             int sorted_keys[MAX_OBJ_KEYS];
             int count = 0;
             
-            // Extract AST Key node indices in strict alphabetical order
             key_tree_get_ordered(key_pool, node->key_tree_root, sorted_keys, &count);
  
             for (int i = 0; i < count; i++) {
@@ -670,16 +689,9 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
                 int val_idx = key_node->next_sibling;
                 
                 if (val_idx != -1) {
-                    // 1. Evaluate the child value recursively
                     Value child_val = ast_to_value(pool, key_pool, val_idx, shape_root, arena);
-                    
-                    // 2. Extract the key string dynamically using length-prefixed Arena allocation
                     int klen = key_node->token.value.string.length;
-                    lstr_t key_str = arena_alloc_str(arena, key_node->token.value.string.start, klen);
-                    
-                    // 3. Set the property on the object
-                    // Because we iterate through sorted_keys, obj_set is ALWAYS 
-                    // called in alphabetical order, maximizing shape sharing!
+                    lstr_t key_str = arena_alloc_str(arena, key_node->token.value.string.start, klen, key_node->token.has_escape);
                     obj_set(arena, obj, (const_lstr_t)key_str, child_val);
                 }
             }
@@ -688,12 +700,10 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
         }
  
         case AST_ARRAY: {
-            // Assumes you have an array implementation in your runtime
             Arr *arr = arr_new(arena);
             
             int child_idx = node->first_child;
             for (int i = 0; child_idx != -1; i++) {
-                // Arrays maintain their parsed order
                 Value child_val = ast_to_value(pool, key_pool, child_idx, shape_root, arena);
                 arr_set(arena, arr, i, child_val);
                 child_idx = pool[child_idx].next_sibling;
@@ -704,10 +714,41 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
  
         case AST_LEAF: {
             switch (node->token.type) {
-                case T_NUMBER:
-                    // You might want to check if it's an integer vs float here
-                    // depending on how your JSON parser stores numbers
-                    return val_double(node->token.value.number);
+                case T_NUMBER: {
+                    const unsigned char *s = node->token.value.raw_number.start;
+                    size_t len = node->token.value.raw_number.length;
+                    bool is_float = false;
+                    for (size_t i = 0; i < len; i++) {
+                      if (s[i] == '.' || s[i] == 'e' || s[i] == 'E') {
+                        is_float = true;
+                        break;
+                      }
+                    }
+                    if (is_float) {
+                      char buf[128];
+                      if (len < sizeof(buf)) {
+                        memcpy(buf, s, len);
+                        buf[len] = '\0';
+                        return val_double(strtod(buf, NULL));
+                      }
+                      lstr_t tmp_str = arena_alloc_str(arena, s, len, false);
+                      return val_bignum(tmp_str);
+                    } else {
+                      char buf[128];
+                      if (len < sizeof(buf)) {
+                        memcpy(buf, s, len);
+                        buf[len] = '\0';
+                        errno = 0;
+                        char *endptr;
+                        long long ll = strtoll(buf, &endptr, 10);
+                        if (errno != ERANGE && endptr == buf + len) {
+                          return val_int((int64_t)ll);
+                        }
+                      }
+                      lstr_t tmp_str = arena_alloc_str(arena, s, len, false);
+                      return val_bignum(tmp_str);
+                    }
+                }
                 case T_NULL:
                     return val_null();
                 case T_TRUE:
@@ -715,10 +756,8 @@ Value ast_to_value(ASTNode *pool, KeyTreePool *key_pool, int node_idx, Shape *sh
                 case T_FALSE:
                     return val_bool(0);
                 case T_STRING: {
-                    // Extract null-terminated string using length-prefixed Arena allocation
                     int slen = node->token.value.string.length;
-                    lstr_t tmp_str = arena_alloc_str(arena, node->token.value.string.start, slen);
-                    
+                    lstr_t tmp_str = arena_alloc_str(arena, node->token.value.string.start, slen, node->token.has_escape);
                     Value str_val = val_str(tmp_str);
                     return str_val;
                 }

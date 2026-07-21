@@ -124,6 +124,16 @@ static void serialize_val(JsonWriter *w, Value v, const Visited *visited) {
       break;
     }
 
+    case VAL_BIGNUM: {
+      if (v.as.p) {
+        StringHeader *sh = (StringHeader *)v.as.p - 1;
+        write_str(w, (const char *)v.as.p, sh->length);
+      } else {
+        write_str(w, "0", 1);
+      }
+      break;
+    }
+
     case VAL_STRING: {
       size_t len = val_str_len(v);
       write_escaped_str(w, (const char *)v.as.p, len);

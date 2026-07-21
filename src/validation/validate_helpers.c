@@ -192,8 +192,20 @@ bool ast_nodes_equal(const ASTNode *pool, int n1_idx, int n2_idx) {
     case AST_FALSE:
       return true;
 
-    case AST_NUMBER:
-      return n1->token.value.number == n2->token.value.number;
+    case AST_NUMBER: {
+      const unsigned char *s1 = n1->token.value.raw_number.start;
+      size_t l1 = n1->token.value.raw_number.length;
+      const unsigned char *s2 = n2->token.value.raw_number.start;
+      size_t l2 = n2->token.value.raw_number.length;
+      if (l1 == l2 && memcmp(s1, s2, l1) == 0) return true;
+      char b1[128], b2[128];
+      if (l1 < sizeof(b1) && l2 < sizeof(b2)) {
+        memcpy(b1, s1, l1); b1[l1] = '\0';
+        memcpy(b2, s2, l2); b2[l2] = '\0';
+        return strtod(b1, NULL) == strtod(b2, NULL);
+      }
+      return false;
+    }
 
     case AST_STRING: {
       const char *s1 = (const char *)n1->token.value.string.start;

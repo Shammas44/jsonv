@@ -11,26 +11,13 @@
 #define T Lexer
 
 static void skip_whitespace(T *l);
-static bool advance_if_match(Lexer *l, char expected);
 static int is_hex_digit(char c);
 static bool is_digit(char c);
 static Token parse_string(T *l, const unsigned char *token_start);
 static Token parse_literal(T *l, const unsigned char *token_start);
 static Token parse_number(T *l, const unsigned char *token_start);
 
-/*
- * Helper to advance the lexer position if the current character matches the
- * expected character.
- */
-static bool advance_if_match(Lexer *l, char expected) {
-  /*#region*/
-  if (l->current_pos < l->source_len && l->source[l->current_pos] == expected) {
-    l->current_pos++;
-    return true;
-  }
-  return false;
-  /*#endregion*/
-}
+
 
 static void skip_whitespace(T *l) {
   /*#region*/
@@ -59,26 +46,26 @@ static bool is_digit(char c) {
 
 static Token parse_string(Lexer *l, const unsigned char *token_start) {
   /*#region*/
-  // We already consumed the opening '"'
   size_t start_pos = l->current_pos;
+  bool has_escape = false;
 
   while (l->current_pos < l->source_len) {
-    // 1. Cast to unsigned char to handle UTF-8/Emojis correctly
-    unsigned char c = (unsigned char)l->source[l->current_pos];
+    unsigned char c = l->source[l->current_pos];
 
     if (c == '"') {
       l->current_pos++; // Consume closing quote
       return (Token){.value = {.string = {token_start + 1,
                                           l->current_pos - start_pos - 1}},
-                     T_STRING};
+                     .type = T_STRING,
+                     .has_escape = has_escape};
     }
 
     if (c == '\\') {
+      has_escape = true;
       l->current_pos++; // Consume '\'
       if (l->current_pos < l->source_len) {
         char escaped_char = l->source[l->current_pos];
 
-        // Optimization: Inlined short-circuit check instead of standard library strchr call
         if (escaped_char == '"'  || escaped_char == '\\' ||
             escaped_char == '/'  || escaped_char == 'b'  ||
             escaped_char == 'f'  || escaped_char == 'n'  ||
@@ -87,23 +74,44 @@ static Token parse_string(Lexer *l, const unsigned char *token_start) {
           continue;
         }
 
-        // 2. Handle Unicode escapes (\uXXXX)
-        // Emojis can be surrogate pairs (e.g. \uD83D\uDE00)
         if (escaped_char == 'u') {
           l->current_pos++; // Consume 'u'
-          // We expect 4 hex digits
+          uint16_t u1 = 0;
           for (int i = 0; i < 4; i++) {
-            if (l->current_pos < l->source_len &&
-                is_hex_digit(l->source[l->current_pos])) {
-              l->current_pos++;
+            if (l->current_pos < l->source_len && is_hex_digit(l->source[l->current_pos])) {
+              char ch = l->source[l->current_pos++];
+              u1 = (u1 << 4) | (ch >= '0' && ch <= '9' ? ch - '0' :
+                                ch >= 'a' && ch <= 'f' ? ch - 'a' + 10 :
+                                ch - 'A' + 10);
             } else {
-              return (Token){
-                  .value = {.string = {token_start,
-                                       l->current_pos -
-                                           (token_start - l->source)}},
-                  T_ERROR,
-              };
+              return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
             }
+          }
+          if (u1 >= 0xD800 && u1 <= 0xDBFF) {
+            if (l->current_pos + 6 <= l->source_len &&
+                l->source[l->current_pos] == '\\' &&
+                l->source[l->current_pos + 1] == 'u') {
+              uint16_t u2 = 0;
+              bool valid_low = true;
+              for (int i = 0; i < 4; i++) {
+                char ch = l->source[l->current_pos + 2 + i];
+                if (is_hex_digit(ch)) {
+                  u2 = (u2 << 4) | (ch >= '0' && ch <= '9' ? ch - '0' :
+                                    ch >= 'a' && ch <= 'f' ? ch - 'a' + 10 :
+                                    ch - 'A' + 10);
+                } else {
+                  valid_low = false;
+                  break;
+                }
+              }
+              if (valid_low && u2 >= 0xDC00 && u2 <= 0xDFFF) {
+                l->current_pos += 6;
+                continue;
+              }
+            }
+            return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+          } else if (u1 >= 0xDC00 && u1 <= 0xDFFF) {
+            return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
           }
           continue;
         }
@@ -112,41 +120,59 @@ static Token parse_string(Lexer *l, const unsigned char *token_start) {
       return (Token){
           .value = {.string = {token_start,
                                l->current_pos - (token_start - l->source)}},
-          T_ERROR,
+          .type = T_ERROR,
       };
     }
 
-    // 3. Check for control characters using the unsigned value
-    // Emojis (e.g., 0xF0) are now > 32, so they pass this check.
-    if (c < 32) {
-      return (Token){
-          .value = {.string = {token_start,
-                               l->current_pos - (token_start - l->source)}},
-          T_ERROR};
+    if (c < 0x20) {
+      return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+    } else if (c <= 0x7F) {
+      l->current_pos++;
+    } else if (c >= 0xC2 && c <= 0xDF) {
+      if (l->current_pos + 1 >= l->source_len) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      unsigned char b2 = l->source[l->current_pos + 1];
+      if (b2 < 0x80 || b2 > 0xBF) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      l->current_pos += 2;
+    } else if (c >= 0xE0 && c <= 0xEF) {
+      if (l->current_pos + 2 >= l->source_len) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      unsigned char b2 = l->source[l->current_pos + 1];
+      unsigned char b3 = l->source[l->current_pos + 2];
+      if (c == 0xE0 && (b2 < 0xA0 || b2 > 0xBF)) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      if (c == 0xED && (b2 < 0x80 || b2 > 0x9F)) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      if (c != 0xE0 && c != 0xED && (b2 < 0x80 || b2 > 0xBF)) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      if (b3 < 0x80 || b3 > 0xBF) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      l->current_pos += 3;
+    } else if (c >= 0xF0 && c <= 0xF4) {
+      if (l->current_pos + 3 >= l->source_len) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      unsigned char b2 = l->source[l->current_pos + 1];
+      unsigned char b3 = l->source[l->current_pos + 2];
+      unsigned char b4 = l->source[l->current_pos + 3];
+      if (c == 0xF0 && (b2 < 0x90 || b2 > 0xBF)) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      if (c == 0xF4 && (b2 < 0x80 || b2 > 0x8F)) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      if (c != 0xF0 && c != 0xF4 && (b2 < 0x80 || b2 > 0xBF)) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      if (b3 < 0x80 || b3 > 0xBF || b4 < 0x80 || b4 > 0xBF) return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
+      l->current_pos += 4;
+    } else {
+      return (Token){.value = {.string = {token_start, l->current_pos - (token_start - l->source)}}, .type = T_ERROR};
     }
-
-    l->current_pos++;
   }
 
   return (Token){
       .value = {.string = {token_start,
                            l->source_len - (token_start - l->source)}},
-      T_ERROR,
+      .type = T_ERROR,
   };
   /*#endregion*/
 }
 
 static Token parse_literal(T *l, const unsigned char *token_start) {
   /*#region*/
-  // We have already consumed the first char (t, f, or n)
-
-  // Optimization: Direct index character comparison instead of standard strncmp call
   if (token_start[0] == 't' && l->current_pos + 3 <= l->source_len &&
       l->source[l->current_pos] == 'r' &&
       l->source[l->current_pos + 1] == 'u' &&
       l->source[l->current_pos + 2] == 'e') {
     l->current_pos += 3;
-    return (Token){{0}, T_TRUE}; // "true"
+    return (Token){.type = T_TRUE};
   }
 
   if (token_start[0] == 'f' && l->current_pos + 4 <= l->source_len &&
@@ -155,7 +181,7 @@ static Token parse_literal(T *l, const unsigned char *token_start) {
       l->source[l->current_pos + 2] == 's' &&
       l->source[l->current_pos + 3] == 'e') {
     l->current_pos += 4;
-    return (Token){{0}, T_FALSE}; // "false"
+    return (Token){.type = T_FALSE};
   }
 
   if (token_start[0] == 'n' && l->current_pos + 3 <= l->source_len &&
@@ -163,11 +189,10 @@ static Token parse_literal(T *l, const unsigned char *token_start) {
       l->source[l->current_pos + 1] == 'l' &&
       l->source[l->current_pos + 2] == 'l') {
     l->current_pos += 3;
-    return (Token){{0}, T_NULL}; // "null"
+    return (Token){.type = T_NULL};
   }
 
-  // If it started with t, f, or n but wasn't a recognized literal
-  return (Token){.value = {.string = {token_start, 1}}, T_ERROR};
+  return (Token){.value = {.string = {token_start, 1}}, .type = T_ERROR};
   /*#endregion*/
 }
 
@@ -175,101 +200,67 @@ static Token parse_number(Lexer *l, const unsigned char *token_start) {
   /*#region*/
   size_t start_pos = l->current_pos - 1;
 
-  // --- 1. Handle Start Conditions ---
+  if (token_start[0] == '+' || token_start[0] == '.') {
+    return (Token){
+        .value = {.raw_number = {token_start, 1}},
+        .type = T_ERROR};
+  }
 
-  // CASE A: Number starts with '.' (e.g., ".2")
-  if (token_start[0] == '.') {
-    // If it starts with '.', it MUST be followed by a digit.
-    // (A standalone '.' is usually a different token, not a number)
-    if (l->current_pos >= l->source_len ||
-        !is_digit(l->source[l->current_pos])) {
+  if (token_start[0] == '-') {
+    if (l->current_pos >= l->source_len || !is_digit(l->source[l->current_pos])) {
       return (Token){
-          .value = {.string = {(const unsigned char *)token_start, 1}},
-          T_ERROR};
-    }
-
-    // Consume the digits (these are the fractional part)
-    while (l->current_pos < l->source_len &&
-           is_digit(l->source[l->current_pos])) {
-      l->current_pos++;
-    }
-  }
-  // CASE B: Number starts with Digit, '+', or '-'
-  else {
-    // 1a. Sign Check
-    if (token_start[0] == '-' || token_start[0] == '+') {
-      if (!is_digit(l->source[l->current_pos])) {
-        return (Token){
-            .value = {.string = {(const unsigned char *)token_start, 1}},
-            T_ERROR};
-      }
-    }
-
-    // 1b. Integer Part
-    while (l->current_pos < l->source_len &&
-           is_digit(l->source[l->current_pos])) {
-      l->current_pos++;
-    }
-
-    // 1c. Fractional Part (Optional)
-    if (l->current_pos < l->source_len && l->source[l->current_pos] == '.') {
-      l->current_pos++; // Consume '.'
-      if (l->current_pos >= l->source_len ||
-          !is_digit(l->source[l->current_pos])) {
-        return (Token){.value = {.string = {(const unsigned char *)token_start,
-                                            l->current_pos - start_pos}},
-                       T_ERROR};
-      }
-      while (l->current_pos < l->source_len &&
-             is_digit(l->source[l->current_pos])) {
-        l->current_pos++;
-      }
+          .value = {.raw_number = {token_start, l->current_pos - start_pos}},
+          .type = T_ERROR};
     }
   }
 
-  // --- 2. Exponent Part (Shared) ---
-  // Works for both "1.2e5" and ".2e5"
-  char c = l->source[l->current_pos];
-  if (c == 'e' || c == 'E') {
-    l->current_pos++;
-    if (advance_if_match(l, '+') || advance_if_match(l, '-')) {
-    }
+  unsigned char first_digit = (token_start[0] == '-') ? l->source[l->current_pos++] : token_start[0];
 
-    if (l->current_pos >= l->source_len ||
-        !is_digit(l->source[l->current_pos])) {
-      return (Token){.value = {.string = {(const unsigned char *)token_start,
-                                          l->current_pos - start_pos}},
-                     T_ERROR};
+  if (first_digit == '0') {
+    if (l->current_pos < l->source_len && is_digit(l->source[l->current_pos])) {
+      return (Token){
+          .value = {.raw_number = {token_start, l->current_pos - start_pos}},
+          .type = T_ERROR};
     }
-    while (l->current_pos < l->source_len &&
-           is_digit(l->source[l->current_pos])) {
+  } else if (first_digit >= '1' && first_digit <= '9') {
+    while (l->current_pos < l->source_len && is_digit(l->source[l->current_pos])) {
       l->current_pos++;
-    }
-  }
-
-  // --- 3. Parse Value ---
-  size_t length = l->current_pos - start_pos;
-  double value = 0.0;
-  char buffer[128];
-
-  if (length < sizeof(buffer)) {
-    memcpy(buffer, token_start, length);
-    buffer[length] = '\0';
-
-    char *endptr;
-    errno = 0;
-    value = strtod(buffer, &endptr);
-
-    if (endptr == buffer) {
-      value = 0.0;
-    } else if (errno == ERANGE) {
-      value = 0.0;
     }
   } else {
-    value = 0.0;
+    return (Token){
+        .value = {.raw_number = {token_start, l->current_pos - start_pos}},
+        .type = T_ERROR};
   }
 
-  return (Token){.value = {.number = value}, T_NUMBER};
+  if (l->current_pos < l->source_len && l->source[l->current_pos] == '.') {
+    l->current_pos++;
+    if (l->current_pos >= l->source_len || !is_digit(l->source[l->current_pos])) {
+      return (Token){
+          .value = {.raw_number = {token_start, l->current_pos - start_pos}},
+          .type = T_ERROR};
+    }
+    while (l->current_pos < l->source_len && is_digit(l->source[l->current_pos])) {
+      l->current_pos++;
+    }
+  }
+
+  if (l->current_pos < l->source_len && (l->source[l->current_pos] == 'e' || l->source[l->current_pos] == 'E')) {
+    l->current_pos++;
+    if (l->current_pos < l->source_len && (l->source[l->current_pos] == '+' || l->source[l->current_pos] == '-')) {
+      l->current_pos++;
+    }
+    if (l->current_pos >= l->source_len || !is_digit(l->source[l->current_pos])) {
+      return (Token){
+          .value = {.raw_number = {token_start, l->current_pos - start_pos}},
+          .type = T_ERROR};
+    }
+    while (l->current_pos < l->source_len && is_digit(l->source[l->current_pos])) {
+      l->current_pos++;
+    }
+  }
+
+  size_t length = l->current_pos - start_pos;
+  return (Token){.value = {.raw_number = {token_start, length}}, .type = T_NUMBER, .has_escape = false};
   /*#endregion*/
 }
 
@@ -278,36 +269,33 @@ Token lexer_next_token(T *l) {
   skip_whitespace(l);
 
   if (l->current_pos >= l->source_len) {
-    return (Token){{0}, T_EOF};
+    return (Token){{0}, T_EOF, false, false};
   }
 
   const unsigned char *token_start = l->source + l->current_pos;
   char c = *token_start;
-  l->current_pos++; // Advance one character initially
+  l->current_pos++;
 
   switch (c) {
-  // Structural Tokens
   case '{':
-    return (Token){.value = {.string = {token_start, 1}}, T_BRACE_OPEN};
+    return (Token){.value = {.string = {token_start, 1}}, .type = T_BRACE_OPEN};
   case '}':
-    return (Token){.value = {.string = {token_start, 1}}, T_BRACE_CLOSE};
+    return (Token){.value = {.string = {token_start, 1}}, .type = T_BRACE_CLOSE};
   case '[':
-    return (Token){.value = {.string = {token_start, 1}}, T_BRACKET_OPEN};
+    return (Token){.value = {.string = {token_start, 1}}, .type = T_BRACKET_OPEN};
   case ']':
-    return (Token){.value = {.string = {token_start, 1}}, T_BRACKET_CLOSE};
+    return (Token){.value = {.string = {token_start, 1}}, .type = T_BRACKET_CLOSE};
   case ':':
-    return (Token){.value = {.string = {token_start, 1}}, T_COLON};
+    return (Token){.value = {.string = {token_start, 1}}, .type = T_COLON};
   case ',':
-    return (Token){.value = {.string = {token_start, 1}}, T_COMMA};
+    return (Token){.value = {.string = {token_start, 1}}, .type = T_COMMA};
 
-  // Literal Tokens
   case '"':
     return parse_string(l, token_start);
 
-  // Numbers and Literals (true, false, null)
-  case '-': // Numbers can start with '-'
-  case '+': // Numbers can start with '+'
-  case '.': // Numbers can start with '+'
+  case '-':
+  case '+':
+  case '.':
   case '0':
   case '1':
   case '2':
@@ -320,14 +308,14 @@ Token lexer_next_token(T *l) {
   case '9':
     return parse_number(l, token_start);
 
-  case 't': // Could be 'true'
-  case 'f': // Could be 'false'
-  case 'n': // Could be 'null'
+  case 't':
+  case 'f':
+  case 'n':
     return parse_literal(l, token_start);
 
   default:
     return (Token){.value = {.string = {token_start, 1}},
-                   T_ERROR}; // Unexpected character
+                   .type = T_ERROR};
   }
   /*#endregion*/
 }

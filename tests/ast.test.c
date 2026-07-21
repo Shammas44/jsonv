@@ -88,10 +88,6 @@ char *cases[] = {
     "{\"k1\": \"v1\" \"k2\": \"v2\" }", // missing commas
     "{\"k1\": [true }",                 // unclosed bracket
     "{2:2}",                            // number as key
-    "[]",                               // no object
-    "null",                             // no object
-    "true",                             // no object
-    "false",                            // no object
     "kkk",                              // unknown type
 };
 for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
@@ -104,3 +100,25 @@ for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
 }
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, top_level_values, init, fini)
+/*#region*/
+Stack stack;
+unsigned char storage[960] = {0};
+char *cases[] = {
+    "[]",
+    "[1, 2, 3]",
+    "\"hello\"",
+    "42",
+    "true",
+    "false",
+    "null",
+};
+for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+  stack_init(&stack, sizeof(ASTNode), storage, sizeof(storage));
+  bool out = run_scenario(&stack, (unsigned char *)cases[i]);
+  cr_expect(out, "Expected top-level value '%s' to parse successfully", cases[i]);
+}
+/*#endregion*/
+END_TIMED_TEST
+

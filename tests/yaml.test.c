@@ -189,8 +189,9 @@ cr_assert_eq(val.tag, JSONV_VAL_OBJ);
 
 Jsonv_Value item;
 cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "int_val"), &item));
-cr_assert_eq(item.tag, JSONV_VAL_DOUBLE);
-cr_assert_eq(item.as.d, 123.0);
+double d_val = 0;
+cr_assert(jsonv_val_get_double(item, &d_val));
+cr_assert_eq(d_val, 123.0);
 
 cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "float_val"), &item));
 cr_assert_eq(item.tag, JSONV_VAL_DOUBLE);
@@ -228,8 +229,9 @@ cr_assert_eq(flow_map.tag, JSONV_VAL_OBJ);
 
 Jsonv_Value flow_map_a;
 cr_assert(jsonv_obj_get(flow_map.as.p, make_temp_lstr(arena, "a"), &flow_map_a));
-cr_assert_eq(flow_map_a.tag, JSONV_VAL_DOUBLE);
-cr_assert_eq(flow_map_a.as.d, 1.0);
+double map_a_val = 0;
+cr_assert(jsonv_val_get_double(flow_map_a, &map_a_val));
+cr_assert_eq(map_a_val, 1.0);
 
 Jsonv_Value flow_arr;
 cr_assert(jsonv_obj_get(val.as.p, make_temp_lstr(arena, "flow_arr"), &flow_arr));
@@ -237,8 +239,9 @@ cr_assert_eq(flow_arr.tag, JSONV_VAL_ARRAY);
 
 Jsonv_Value flow_arr_0;
 cr_assert(jsonv_arr_get(flow_arr.as.p, 0, &flow_arr_0));
-cr_assert_eq(flow_arr_0.tag, JSONV_VAL_DOUBLE);
-cr_assert_eq(flow_arr_0.as.d, 3.0);
+double arr_0_val = 0;
+cr_assert(jsonv_val_get_double(flow_arr_0, &arr_0_val));
+cr_assert_eq(arr_0_val, 3.0);
 /*#endregion*/
 END_TIMED_TEST
 

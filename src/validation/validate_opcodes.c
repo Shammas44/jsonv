@@ -2,6 +2,19 @@
 #include "arena.internal.h"
 #include "parser.h"
 
+static double token_get_double(Token t) {
+  /*#region*/
+  if (t.type == T_NUMBER) {
+    char buf[128];
+    size_t len = t.value.raw_number.length < sizeof(buf) - 1 ? t.value.raw_number.length : sizeof(buf) - 1;
+    memcpy(buf, t.value.raw_number.start, len);
+    buf[len] = '\0';
+    return strtod(buf, NULL);
+  }
+  return 0.0;
+  /*#endregion*/
+}
+
 static bool handle_fail(VMState *state) {
   /*#region*/
   state->out_err->type = Jsonv_ValueNotAllowed_error;
@@ -29,10 +42,12 @@ static bool handle_type(VMState *state) {
       case T_FALSE:
         match = (type_mask & TYPE_BOOL);
         break;
-      case T_NUMBER:
+      case T_NUMBER: {
+        double d = token_get_double(node->token);
         match = (type_mask & TYPE_NUMBER) || 
-                ((type_mask & TYPE_INTEGER) && (node->token.value.number == (int64_t)node->token.value.number));
+                ((type_mask & TYPE_INTEGER) && (d == (int64_t)d));
         break;
+      }
       case T_STRING:
         match = (type_mask & TYPE_STRING);
         break;
@@ -56,7 +71,7 @@ static bool handle_minimum(VMState *state) {
   double min_val = read_double(&state->pc);
   ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
-    double num = node->token.value.number;
+    double num = token_get_double(node->token);
     if (num < min_val) {
       state->out_err->type = Jsonv_Minimum_error;
       state->out_err->path = state->path;
@@ -73,7 +88,7 @@ static bool handle_maximum(VMState *state) {
   double max_val = read_double(&state->pc);
   ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
-    double num = node->token.value.number;
+    double num = token_get_double(node->token);
     if (num > max_val) {
       state->out_err->type = Jsonv_Maximum_error;
       state->out_err->path = state->path;
@@ -350,7 +365,7 @@ static bool handle_multiple_of(VMState *state) {
   double mult_val = read_double(&state->pc);
   ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
-    double num = node->token.value.number;
+    double num = token_get_double(node->token);
     double quot = num / mult_val;
     double diff = quot - (double)(int64_t)(quot + (quot > 0.0 ? 0.5 : -0.5));
     if (diff < 0.0) diff = -diff;
@@ -370,7 +385,7 @@ static bool handle_exclusive_minimum(VMState *state) {
   double min_val = read_double(&state->pc);
   ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
-    double num = node->token.value.number;
+    double num = token_get_double(node->token);
     if (num <= min_val) {
       state->out_err->type = Jsonv_ExclusiveMinimum_error;
       state->out_err->path = state->path;
@@ -387,7 +402,7 @@ static bool handle_exclusive_maximum(VMState *state) {
   double max_val = read_double(&state->pc);
   ASTNode *node = &state->pool[state->node_idx];
   if (node->type == AST_LEAF && node->token.type == T_NUMBER) {
-    double num = node->token.value.number;
+    double num = token_get_double(node->token);
     if (num >= max_val) {
       state->out_err->type = Jsonv_ExclusiveMaximum_error;
       state->out_err->path = state->path;

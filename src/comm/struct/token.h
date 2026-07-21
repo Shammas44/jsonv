@@ -30,17 +30,21 @@ typedef enum {
 } TokenType;
 
   typedef union {
-    double number;
     struct {
       const unsigned char *start;
       size_t length;
     } string;
+    struct {
+      const unsigned char *start;
+      size_t length;
+    } raw_number;
   } TokenValue;
 
 typedef struct {
   TokenValue value;
   TokenType type;
   bool on_new_line;
+  bool has_escape;
 } Token;
 
 #endif
