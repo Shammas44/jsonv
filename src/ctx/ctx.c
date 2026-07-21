@@ -277,7 +277,12 @@ static void yaml_prescan(const char *s, size_t len, JsonEstimate *out) {
   bool line_start = true;
   size_t current_indent = 0;
   
-  for (size_t i = 0; i < len; i++) {
+  size_t start_i = 0;
+  if (len >= 3 && (unsigned char)s[0] == 0xEF && (unsigned char)s[1] == 0xBB && (unsigned char)s[2] == 0xBF) {
+    start_i = 3;
+  }
+
+  for (size_t i = start_i; i < len; i++) {
     char c = s[i];
     
     if (line_start) {

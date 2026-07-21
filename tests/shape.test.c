@@ -350,3 +350,48 @@ TIMED_TEST(T, path_traversal_tests, init, fini)
   cr_expect_eq(invalid_fmt.tag, JSONV_VAL_IMPOSSIBLE);
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, nestor_memory_corruption_prevention, init, fini)
+/*#region*/
+  // 1. Recreate Nestor setup
+  // Create steps_state_obj
+  Jsonv_Obj *steps_state_obj = jsonv_obj_new(arena, NULL);
+  cr_assert_not_null(steps_state_obj);
+
+  // Wrap and add to container
+  Jsonv_Obj *container = jsonv_obj_new(arena, NULL);
+  jsonv_obj_set(arena, container, "steps", jsonv_val_obj(steps_state_obj));
+
+  // Overwrite container steps, which releases the steps_state_obj
+  jsonv_obj_set(arena, container, "steps", jsonv_val_null());
+
+  // Allocate a new object (e.g. parsed HTTP body) on the same arena
+  Jsonv_Obj *body_val = jsonv_obj_new(arena, NULL);
+  cr_assert_not_null(body_val);
+
+  // Assert Object Identity Collapse (Pointer Reuse) is prevented!
+  // steps_state_obj and body_val must be at different memory addresses.
+  cr_expect(steps_state_obj != body_val, "Object identity collapsed! steps_state_obj and body_val share the same memory address.");
+
+  // 2. Set properties on body_val using standard C string literals
+  jsonv_obj_set(arena, body_val, "MGLT", jsonv_val_int(75));
+  jsonv_obj_set(arena, body_val, "cargo_capacity", jsonv_val_int(110));
+
+  // Assert steps_state_obj did NOT inherit/leak any shape/keys or values from body_val (Shape Leakage prevention)
+  Jsonv_Value check_val;
+  cr_expect_eq(jsonv_obj_length(steps_state_obj), 0, "steps_state_obj leaked keys from body_val");
+  cr_expect(!jsonv_obj_get(steps_state_obj, "MGLT", &check_val), "steps_state_obj leaked MGLT value");
+  cr_expect(!jsonv_obj_get(steps_state_obj, "cargo_capacity", &check_val), "steps_state_obj leaked cargo_capacity value");
+
+  // 3. Write properties to steps_state_obj using standard C string literals
+  jsonv_obj_set(arena, steps_state_obj, "get_xwing", jsonv_val_int(42));
+
+  // Verify get_xwing was successfully set on steps_state_obj and is readable
+  cr_expect(jsonv_obj_get(steps_state_obj, "get_xwing", &check_val));
+  cr_expect_eq(check_val.tag, JSONV_VAL_INT);
+  cr_expect_eq(check_val.as.i, 42);
+
+  // Verify body_val does not have get_xwing
+  cr_expect(!jsonv_obj_get(body_val, "get_xwing", &check_val));
+/*#endregion*/
+END_TIMED_TEST

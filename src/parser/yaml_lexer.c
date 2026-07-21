@@ -328,6 +328,9 @@ void yaml_lexer_init(T *l, const unsigned char *source, size_t len) {
   l->source = source;
   l->source_len = len;
   l->current_pos = 0;
+  if (len >= 3 && source[0] == 0xEF && source[1] == 0xBB && source[2] == 0xBF) {
+    l->current_pos = 3;
+  }
   
   l->indent_stack[0] = 0;
   l->indent_top = 0;

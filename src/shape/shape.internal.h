@@ -2,6 +2,7 @@
 #define _JSONV_SHAPE_INTERNAL_H
 
 #include "shape.h"
+#include <string.h>
 
 // Define concrete internal structure layout
 typedef struct Transition Transition;
@@ -49,7 +50,7 @@ typedef const char *const_lstr_t;
 
 static inline size_t val_str_len(Jsonv_Value v) {
   if (v.tag == JSONV_VAL_STRING && v.as.p) {
-    return ((StringHeader *)v.as.p - 1)->length;
+    return strlen((const char *)v.as.p);
   }
   return 0;
 }

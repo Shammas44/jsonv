@@ -5,14 +5,7 @@
 
 void arr_free(Arr *a) {
   /*#region*/
-  if (a->items && a->capacity > 0) {
-    recycle_val_array(a->items, a->capacity);
-    a->items = NULL;
-    a->capacity = 0;
-    a->length = 0;
-  }
-  a->items = (Value *)arr_free_list;
-  arr_free_list = a;
+  (void)a;
   /*#endregion*/
 }
 
@@ -20,14 +13,8 @@ void arr_free(Arr *a) {
 
 Arr *arr_new(Jsonv_Arena *arena) {
   /*#region*/
-  Arr *a;
-  if (arr_free_list) {
-    a = arr_free_list;
-    arr_free_list = (Arr *)a->items;
-  } else {
-    a = (Arr *)jsonv_arena_alloc(arena, sizeof(Arr));
-    if (!a) return NULL;
-  }
+  Arr *a = (Arr *)jsonv_arena_alloc(arena, sizeof(Arr));
+  if (!a) return NULL;
   a->items = NULL;
   a->capacity = 0;
   a->length = 0;

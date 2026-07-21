@@ -364,3 +364,20 @@ cr_expect_eq(val.tag, JSONV_VAL_OBJ);
 /*#endregion*/
 END_TIMED_TEST
 
+TIMED_TEST(T, parse_data_with_utf8_bom, init, fini)
+/*#region*/
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, NULL, NULL);
+cr_assert_not_null(ctx);
+
+const unsigned char *json_with_bom = (const unsigned char *)"\xEF\xBB\xBF{\"name\": \"test_bom\"}";
+bool parse_ok = jsonv_ctx_parse_data(ctx, json_with_bom);
+cr_assert(parse_ok, "Parsing JSON with UTF-8 BOM should succeed");
+
+Value val;
+bool get_ok = jsonv_ctx_get_value(ctx, &val);
+cr_assert(get_ok, "Retrieving value should succeed");
+cr_expect_eq(val.tag, JSONV_VAL_OBJ);
+/*#endregion*/
+END_TIMED_TEST
+
+

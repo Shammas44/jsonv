@@ -4,13 +4,7 @@
 
 void obj_free(Obj *o) {
   /*#region*/
-  if (o->slots && o->capacity > 0) {
-    recycle_val_array(o->slots, o->capacity);
-    o->slots = NULL;
-    o->capacity = 0;
-  }
-  o->slots = (Value *)obj_free_list;
-  obj_free_list = o;
+  (void)o;
   /*#endregion*/
 }
 
@@ -18,14 +12,8 @@ void obj_free(Obj *o) {
 
 Obj *obj_new(Jsonv_Arena *arena, Shape *root) {
   /*#region*/
-  Obj *o;
-  if (obj_free_list) {
-    o = obj_free_list;
-    obj_free_list = (Obj *)o->slots;
-  } else {
-    o = (Obj *)jsonv_arena_alloc(arena, sizeof(Obj));
-    if (!o) return NULL;
-  }
+  Obj *o = (Obj *)jsonv_arena_alloc(arena, sizeof(Obj));
+  if (!o) return NULL;
   o->shape = root ? root : shape_root();
   o->slots = NULL;
   o->capacity = 0;

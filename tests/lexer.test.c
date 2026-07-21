@@ -64,3 +64,18 @@ static TokenType expected[] = {
 run_scenario("{\"key1\": \"value1\", \"key2\": \"value2\" }", S);
 /*#endregion*/
 END_TIMED_TEST
+
+TIMED_TEST(T, tokenize_with_utf8_bom, init, fini)
+/*#region*/
+static TokenType expected[] = {
+    T_BRACE_OPEN,  // "{"
+    T_STRING,      // "key1"
+    T_COLON,       // ":"
+    T_STRING,      // "value1"
+    T_BRACE_CLOSE, // "}"
+    T_EOF,
+};
+run_scenario("\xEF\xBB\xBF{\"key1\": \"value1\"}", S);
+/*#endregion*/
+END_TIMED_TEST
+

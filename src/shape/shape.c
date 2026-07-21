@@ -11,7 +11,7 @@
 static inline size_t lstr_len(const char *s) {
   /*#region*/
   if (!s) return 0;
-  return ((const StringHeader *)s - 1)->length;
+  return strlen(s);
   /*#endregion*/
 }
 
@@ -19,17 +19,14 @@ static Jsonv_Arena *global_shape_arena = NULL;
 static pthread_mutex_t shape_mutex = PTHREAD_MUTEX_INITIALIZER;
 static Jsonv_Shape* root = NULL;
 
-static void init_global_shape_arena(void) {
+static void init_global_shape_arena_unlocked(void) {
   /*#region*/
   if (!global_shape_arena) {
-    pthread_mutex_lock(&shape_mutex);
-    if (!global_shape_arena) {
-      global_shape_arena = arena_new(4096, 10 * 1024 * 1024, 1024 * 1024);
-    }
-    pthread_mutex_unlock(&shape_mutex);
+    global_shape_arena = arena_new(4096, 10 * 1024 * 1024, 1024 * 1024);
   }
   /*#endregion*/
 }
+
 
 void jsonv_shape_clear_global_arena(void) {
   /*#region*/
@@ -60,8 +57,8 @@ static Shape* find_transition_no_lock(Shape* s, const char *key) {
 
 Shape* shape_transition_add(Shape* s, const char *key) {
   /*#region*/
-  init_global_shape_arena();
   pthread_mutex_lock(&shape_mutex);
+  init_global_shape_arena_unlocked();
   Shape* existing = find_transition_no_lock(s, key);
   if (existing) {
     pthread_mutex_unlock(&shape_mutex);
@@ -104,11 +101,12 @@ Shape* shape_find_transition(Shape* s, const char *key) {
 
 Shape* shape_root(void) {
   /*#region*/
-  if(root){
+  pthread_mutex_lock(&shape_mutex);
+  if (root) {
+    pthread_mutex_unlock(&shape_mutex);
     return root;
   }
-  init_global_shape_arena();
-  pthread_mutex_lock(&shape_mutex);
+  init_global_shape_arena_unlocked();
 
   root = (Shape*)jsonv_arena_alloc(global_shape_arena, sizeof(Shape));
   if (root) {
