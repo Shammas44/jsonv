@@ -1,6 +1,7 @@
 #include "validate_internal.h"
 #include "arena.internal.h"
 #include "parser.h"
+#include "unescape.h"
 
 static double token_get_double(Token t) {
   /*#region*/
@@ -288,6 +289,15 @@ static bool handle_properties(VMState *state) {
           k_len -= 2;
         }
 
+        if (k.has_escape) {
+          char stack_buf[256];
+          char *ubuf = (k_len + 1 <= sizeof(stack_buf)) ? stack_buf : (char *)arena_alloc(jsonv_ctx_arena(state->ctx), k_len + 1);
+          if (ubuf) {
+            k_len = jsonv_unescape_string((const unsigned char *)k_start, k_len, ubuf);
+            k_start = ubuf;
+          }
+        }
+
         // Construct new path for validation errors
         size_t p_len = strlen(state->path);
         size_t needed = p_len + k_len + 2;
@@ -431,8 +441,13 @@ static bool handle_pattern(VMState *state) {
 
     char *target_str = (char *)arena_alloc(jsonv_ctx_arena(state->ctx), val_len + 1);
     if (!target_str) return false;
-    memcpy(target_str, val_start, val_len);
-    target_str[val_len] = '\0';
+    if (!node->token.has_escape) {
+      memcpy(target_str, val_start, val_len);
+      target_str[val_len] = '\0';
+    } else {
+      size_t ulen = jsonv_unescape_string((const unsigned char *)val_start, val_len, target_str);
+      target_str[ulen] = '\0';
+    }
 
     char *pattern_str = (char *)arena_alloc(jsonv_ctx_arena(state->ctx), pat_len + 1);
     if (!pattern_str) return false;

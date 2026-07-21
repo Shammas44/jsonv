@@ -1,5 +1,6 @@
 #include "schema.h"
 #include "parser.h"
+#include "unescape.h"
 #include "arena.internal.h"
 #include "atom.h"
 #include "table.h"
@@ -160,10 +161,16 @@ static inline void emit_string_ref(uint8_t **pc, uint8_t *bytecode, uint32_t con
   const char *str = get_stripped_string(t, &len);
   uint32_t rel_offset = *data_write_ptr - constant_pool_start;
   emit_uint32(pc, rel_offset);
-  emit_uint32(pc, len);
-  if (len > 0 && str != NULL) {
-    memcpy(bytecode + *data_write_ptr, str, len);
-    *data_write_ptr += len;
+  if (!t.has_escape || !str) {
+    emit_uint32(pc, len);
+    if (len > 0 && str != NULL) {
+      memcpy(bytecode + *data_write_ptr, str, len);
+      *data_write_ptr += len;
+    }
+  } else {
+    size_t ulen = jsonv_unescape_string((const unsigned char *)str, len, (char *)(bytecode + *data_write_ptr));
+    emit_uint32(pc, (uint32_t)ulen);
+    *data_write_ptr += (uint32_t)ulen;
   }
   /*#endregion*/
 }

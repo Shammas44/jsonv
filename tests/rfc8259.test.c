@@ -8,18 +8,25 @@
 
 #define T RFC8259
 
+static Jsonv_Arena *schema_arena = NULL;
 static Jsonv_Arena *execution_arena = NULL;
 
 static void init(void) {
   /*#region*/
   test_init();
+  schema_arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
   execution_arena = jsonv_arena_new(4096, 1024 * 1024, 12 * 1024);
+  cr_assert_not_null(schema_arena);
   cr_assert_not_null(execution_arena);
   /*#endregion*/
 }
 
 static void fini(void) {
   /*#region*/
+  if (schema_arena) {
+    jsonv_arena_destroy(schema_arena);
+    schema_arena = NULL;
+  }
   if (execution_arena) {
     jsonv_arena_destroy(execution_arena);
     execution_arena = NULL;
@@ -176,5 +183,75 @@ Jsonv_Value prop;
 cr_expect(jsonv_obj_get(obj, long_key, &prop));
 cr_expect_eq(prop.tag, JSONV_VAL_INT);
 cr_expect_eq(prop.as.i, 42);
+/*#endregion*/
+END_TIMED_TEST
+
+TIMED_TEST(T, schema_pattern_escaped_regex_validation, init, fini)
+/*#region*/
+// Test 1: Semver pattern with POSIX ERE digits [0-9]* and escaped dots \\.
+const char *semver_schema_json = 
+    "{"
+    "  \"type\": \"object\","
+    "  \"required\": [\"version\"],"
+    "  \"properties\": {"
+    "    \"version\": { \"type\": \"string\", \"pattern\": \"^(0|[1-9][0-9]*)\\\\.(0|[1-9][0-9]*)\\\\.(0|[1-9][0-9]*)$\" }"
+    "  }"
+    "}";
+
+Jsonv_Error err = {0};
+Jsonv_Schema *schema = jsonv_schema_compile(schema_arena, (const unsigned char *)semver_schema_json, NULL, &err);
+cr_assert_not_null(schema, "Schema compilation failed: %s", err.description);
+
+Jsonv_Context *ctx = jsonv_ctx_new(execution_arena, NULL, NULL);
+cr_assert_not_null(ctx);
+
+// Valid semver strings
+cr_expect(jsonv_ctx_parse_data(ctx, (const unsigned char *)"{\"version\": \"1.0.0\"}"));
+cr_expect(jsonv_ctx_validate(ctx, schema));
+jsonv_ctx_reset(ctx);
+
+cr_expect(jsonv_ctx_parse_data(ctx, (const unsigned char *)"{\"version\": \"10.20.300\"}"));
+cr_expect(jsonv_ctx_validate(ctx, schema));
+jsonv_ctx_reset(ctx);
+
+cr_expect(jsonv_ctx_parse_data(ctx, (const unsigned char *)"{\"version\": \"0.1.2\"}"));
+cr_expect(jsonv_ctx_validate(ctx, schema));
+jsonv_ctx_reset(ctx);
+
+// Invalid semver strings
+cr_expect(jsonv_ctx_parse_data(ctx, (const unsigned char *)"{\"version\": \"1.0.0-alpha\"}"));
+cr_expect(!jsonv_ctx_validate(ctx, schema));
+jsonv_ctx_reset(ctx);
+
+cr_expect(jsonv_ctx_parse_data(ctx, (const unsigned char *)"{\"version\": \"01.0.0\"}"));
+cr_expect(!jsonv_ctx_validate(ctx, schema));
+jsonv_ctx_reset(ctx);
+
+// Test 2: Escaped backslash in pattern and target data string
+const char *path_schema_json = "{\"type\": \"string\", \"pattern\": \"^foo\\\\\\\\bar$\"}";
+Jsonv_Schema *path_schema = jsonv_schema_compile(schema_arena, (const unsigned char *)path_schema_json, NULL, &err);
+cr_assert_not_null(path_schema, "Path schema compilation failed: %s", err.description);
+
+cr_expect(jsonv_ctx_parse_data(ctx, (const unsigned char *)"\"foo\\\\bar\""));
+cr_expect(jsonv_ctx_validate(ctx, path_schema));
+jsonv_ctx_reset(ctx);
+
+cr_expect(jsonv_ctx_parse_data(ctx, (const unsigned char *)"\"foobar\""));
+cr_expect(!jsonv_ctx_validate(ctx, path_schema));
+jsonv_ctx_reset(ctx);
+
+// Test 3: Unicode escape in pattern (\u0061 -> 'a')
+const char *unicode_schema_json = "{\"type\": \"string\", \"pattern\": \"^\\u0061+\\\\.$\"}";
+Jsonv_Schema *unicode_schema = jsonv_schema_compile(schema_arena, (const unsigned char *)unicode_schema_json, NULL, &err);
+cr_assert_not_null(unicode_schema, "Unicode schema compilation failed: %s", err.description);
+
+cr_expect(jsonv_ctx_parse_data(ctx, (const unsigned char *)"\"aaa.\""));
+cr_expect(jsonv_ctx_validate(ctx, unicode_schema));
+jsonv_ctx_reset(ctx);
+
+cr_expect(jsonv_ctx_parse_data(ctx, (const unsigned char *)"\"bbb.\""));
+cr_expect(!jsonv_ctx_validate(ctx, unicode_schema));
+jsonv_ctx_reset(ctx);
+
 /*#endregion*/
 END_TIMED_TEST
