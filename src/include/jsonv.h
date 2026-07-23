@@ -6,5 +6,7 @@
 #include "error.h"
 #include "global.h"
 #include "shape.h"
+#include "sax.h"
 
 #endif
+
